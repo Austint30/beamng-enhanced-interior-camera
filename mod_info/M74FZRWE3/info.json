@@ -1,0 +1,48 @@
+{
+    "attachments": [
+        {
+            "data_filename": "986105.png",
+            "original_filename": "upload_2023-1-21_23-30-25.png",
+            "thumb_filename": "thumbs\/986105.jpg"
+        },
+        {
+            "data_filename": "986110.png",
+            "original_filename": "upload_2023-1-21_23-33-19.png",
+            "thumb_filename": "thumbs\/986110.jpg"
+        }
+    ],
+    "resource_id": 24952,
+    "current_version_id": 44107,
+    "download_count": 0,
+    "resource_version_id": 44839,
+    "version_string": "1.2",
+    "last_update": 1674462613,
+    "rating_avg": 4.78947,
+    "rating_count": 0,
+    "rating_sum": 0,
+    "resource_category_id": 7,
+    "resource_date": 1672916766,
+    "review_count": 60,
+    "tag_line": "Interior camera with new effects",
+    "update_count": 1,
+    "path": "M74FZRWE3\/44107\/",
+    "filename": "enhanceddriver.zip",
+    "title": "Enhanced Interior Camera",
+    "user_id": 8160,
+    "username": "austint30",
+    "tagid": "M74FZRWE3",
+    "message": "This is my first ever BeamNG mod! I have noticed that there aren't many camera script mods available, so I decided to make one to the best of my ability.\n\nThis camera script is a modification of the original driver.lua script that comes with the game. I have added screen shaking effects and additional g-force driven effects to increase the sense of speed and improve the fun-factor of driving overall. These camera effects are partially inspired by Forza and DriveClub.\n\nSpeed screen shake\n[MEDIA=youtube]oI0YYdl4X6I[\/MEDIA]\n\nJump g-force effect\n[MEDIA=youtube]AMqWX17AGbk[\/MEDIA]\n\nHead-on collision effect\n[MEDIA=youtube]2tizvcWoN84[\/MEDIA]\n\nDrift screen shake\n[MEDIA=youtube]a8reZI7TQWI[\/MEDIA]\n\n[B]Features:[\/B]\n[LIST]\n[*]Subtle screen shake when over 100 mph.\n[*]Screen shake while drifting.\n[*]Camera tilts back slightly when accelerating.\n[*]Camera tilts forward slightly while braking.\n[*]Camera jerks forward on heavy head-on collisions.\n[*]Camera jerks forward with heavy upward g-forces. (i.e. driving on loops, hitting ramps or large bumps, hard landings)\n[*][NEW v1.2] Smoothing of bumps. Makes Johnson Valley more tolerable in interior view.\n[\/LIST]\n[B]How to Enable:[\/B]\nGo to Options > Camera and enable EnhancedDriver.\n[ATTACH=full]986110[\/ATTACH]\n[B]\nNote:[\/B] There is no way to configure the strength of these effects at the moment. I don't know how to implement such a thing yet.\n\n[B]Known issues:[\/B]\n[LIST]\n[*]Camera jerks forward when using recover vehicle at speed.\n[*]HUD doesn't hide (still trying to figure this out. afaik even the DriveAhead camera mod doesn't hide the HUD)\n[\/LIST]",
+    "category_title": "",
+    "prefix_title": "",
+    "via": "packed by repo on Fri, 24 Feb 2023 07:00:46 GMT",
+    "hashes": [
+        [
+            "lua\/ge\/extensions\/core\/cameraModes\/speedshake.lua",
+            "c449802b1f178139"
+        ],
+        [
+            "lua\/ge\/extensions\/core\/cameraModes\/enhanceddriver.lua",
+            "aa5aa76a56c6fff6"
+        ]
+    ]
+}

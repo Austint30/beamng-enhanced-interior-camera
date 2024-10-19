@@ -1,0 +1,13 @@
+{
+  "name" : "Enhanced Interior Camera Settings",
+  "author": "austint30",
+  "version": "1",
+  "description": "Customize the edc mod experience",
+  "directive": "edcSettings",
+  "domElement": "<edc-settings></edc-settings>",
+  "css": { 
+    "width": "420px",
+    "height": "480px"
+  },
+  "preserveAspectRatio": false
+}

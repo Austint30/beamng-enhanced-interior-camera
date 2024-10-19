@@ -1,0 +1,134 @@
+.edc-settings {
+    --ui-orange-color: #ff6600;
+    --button-height: 1.75em;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.0);
+}
+
+div:has(> .edc-settings:not(.expanded)),
+.edc-settings:not(.expanded) {
+    max-height: 48px !important;
+}
+
+.edc-show-hide-button {
+    width: 36px;
+    height: 36px;
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.edc-title {
+    text-transform: uppercase;
+    flex: 1;
+    line-height: 32px;
+    margin: 8px 0;
+    text-align: center;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.edc-close-button {
+    display: block;
+    min-width: 36px;
+    background-color: rgba(255, 69, 69, 1);
+    color: white;
+}
+
+.edc-close-button:hover {
+    background-color: rgb(255, 103, 103) !important;
+}
+
+.edc-close-button:active {
+    background-color: rgb(224, 89, 89, 1) !important;
+}
+
+.edc-main-header {
+    background-color: rgba(0, 0, 0, 0.85);
+    display: flex;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    backdrop-filter: blur(12px);
+    cursor: move;
+    height: 48px;
+}
+
+.edc-settings:not(.expanded) .edc-main-header {
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.edc-preset-container {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 24px;
+    background-color: rgba(0, 0, 0, 0.85);
+    border-top: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.edc-tab-container {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+    border-top: 1px solid rgba(255, 255, 255, 0.4);
+    background-color: rgba(19, 19, 19, 0.85);
+    flex: 1;
+    min-height: 0 !important;
+}
+
+.edc-main-footer {
+    background-color: rgba(0, 0, 0, 0.85);
+    display: flex;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    backdrop-filter: blur(12px);
+    position: relative;
+    height: 48px;
+}
+
+.edc-divider {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+    margin: 12px 0;
+}
+
+.edc-slider-value {
+    min-width: 60px;
+    text-align: right;
+}
+
+.edc-drag-handle {
+    height: 36px;
+    line-height: 36px;
+    width: 36px;
+    margin: 6px 8px;
+    text-align: center;
+    cursor: move;
+}
+
+.edc-resize {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    height: 24px;
+    min-height: 24px;
+    line-height: 24px;
+    width: 24px;
+    min-width: 24px;
+    cursor: se-resize;
+}
+
+.edc-resize > md-icon {
+    transform: rotate(90deg);
+}
+
+.edc-save-container {
+    display: flex;
+}
+
+.edc-save-container > input:first-child {
+    margin-left: 6px;
+    min-width: 0;
+    width: 224px;
+    flex-shrink: 1;
+}

@@ -1,0 +1,216 @@
+<div class="bngApp edc-settings" ng-class="{'expanded': expanded}">
+    <link href="/ui/modules/apps/edcSettings/app.css" rel="stylesheet">
+    <div class="edc-main-header">
+        <!-- <md-icon ng-mousedown="translateStart($event)" class="material-icons edc-drag-handle">drag_handle</md-icon> -->
+        <md-button class="md-button edc-show-hide-button" ng-click="showHide();$event.stopPropagation();">
+            <md-icon ng-show="expanded">expand_less</md-icon>
+            <md-icon ng-hide="expanded">expand_more</md-icon>
+        </md-button>
+        <div class="edc-title" ng-mousedown="beginTranslate($event);">{{ name }}</div>
+        <md-button class="edc-close-button" ng-click="closeApp();$event.stopPropagation();saveLayout();">
+            <md-icon>clear</md-icon>
+        </md-button>
+    </div>
+    <div class="edc-preset-container" ng-show="expanded && !loading">
+        <p>Choose preset</p>
+        <div style="display: flex;">
+            <md-button class="md-accent" ng-click="onDeletePreset()" ng-hide="isDefaultPreset">Delete</md-button>
+            <md-select aria-label="_" ng-model="settings.chosenPreset" flex="10" ng-change="onPresetChanged()">
+                <md-select-label style="width:100%;"></md-select-label>
+                <md-option md-no-ink ng-repeat="name in presetNames" value="{{ name }}">{{ name }}</md-option>
+            </md-select>
+        </div>
+    </div>
+    <md-tabs class="edc-tab-container" ng-show="expanded && !loading">
+        <md-tab label="G-Effects">
+            <md-list flex layout="column" layout-align="center stretch">
+                <md-subheader>Head Motion</md-subheader>
+                <md-list-item md-no-ink>
+                    <p>
+                        <md-tooltip>Adjusts the strength of the forward head motion.</md-tooltip>
+                        Accel Strength
+                    </p>
+                    <md-slider flex ng-model="presetData.gForceAccel" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                    </md-slider>
+                    <span class="edc-slider-value">{{ presetData.gForceAccel }}</span>
+                </md-list-item>
+                <md-list-item md-no-ink>
+                    <p>
+                        <md-tooltip>Adjusts the strength of the backward head motion.</md-tooltip>
+                        Decel Strength
+                    </p>
+                    <md-slider flex ng-model="presetData.gForceDecel" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                    </md-slider>
+                    <span class="edc-slider-value">{{ presetData.gForceDecel }}</span>
+                </md-list-item>
+                <md-list-item md-no-ink>
+                    <p>
+                        <md-tooltip>Adjusts the the required force needed to experience accel/decel g-force effects.</md-tooltip>
+                        Accel/Decel Threshold
+                    </p>
+                    <md-slider flex ng-model="presetData.gForceYThreshold" min="0" max="40" step="0.01" aria-label="_" ng-change="onSettingChanged()">
+                    </md-slider>
+                    <span class="edc-slider-value">{{ presetData.gForceYThreshold }}</span>
+                </md-list-item>
+                <md-list-item md-no-ink>
+                    <p>
+                        <md-tooltip>Adjusts the strength of the head motion from loops and landing impacts.</md-tooltip>
+                        Normal Force Strength
+                    </p>
+                    <md-slider flex ng-model="presetData.gForceZ" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                    </md-slider>
+                    <span class="edc-slider-value">{{ presetData.gForceZ }}</span>
+                </md-list-item>
+                <md-list-item md-no-ink>
+                    <p>
+                        <md-tooltip>Adjusts the the required force needed to experience up/down g-force effects.</md-tooltip>
+                        Normal Force Threshold
+                    </p>
+                    <md-slider flex ng-model="presetData.gForceZThreshold" min="0" max="40" step="0.01" aria-label="_" ng-change="onSettingChanged()">
+                    </md-slider>
+                    <span class="edc-slider-value">{{ presetData.gForceZThreshold }}</span>
+                </md-list-item>
+            </md-list>
+        </md-tab>
+        <md-tab label="Shake">
+            <md-subheader>Speed Shake</md-subheader>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the amplitude of the speed shake effect (shakes softer/harder).</md-tooltip>
+                    Amplitude
+                </p>
+                <md-slider flex ng-model="presetData.speedShakeAmp" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.speedShakeAmp }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the frequency of the speed shake effect (shakes slower/faster).</md-tooltip>
+                    Frequency
+                </p>
+                <md-slider flex ng-model="presetData.speedShakeFreq" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.speedShakeFreq }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the minimum speed where the shaking effect starts.</md-tooltip>
+                    Min Speed
+                </p>
+                <md-slider flex ng-model="speedShakeMinSpeed" min="0" max="400" step="1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ speedShakeMinSpeedRounded }} {{ distanceUnits.label }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the maximum speed where the shaking effect gets the most intense.</md-tooltip>
+                    Max Speed
+                </p>
+                <md-slider flex ng-model="speedShakeMaxSpeed" min="0" max="400" step="1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ speedShakeMaxSpeedRounded }} {{ distanceUnits.label }}</span>
+            </md-list-item>
+            <md-divider class="edc-divider"></md-divider>
+            <md-subheader>Drift Shake</md-subheader>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the amplitude of the drift shake effect (shakes softer/harder).</md-tooltip>
+                    Amplitude
+                </p>
+                <md-slider flex ng-model="presetData.driftShakeAmp" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.driftShakeAmp }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the frequency of the drift shake effect (shakes slower/faster).</md-tooltip>
+                    Frequency
+                </p>
+                <md-slider flex ng-model="presetData.driftShakeFreq" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.driftShakeFreq }}</span>
+            </md-list-item>
+        </md-tab>
+        <md-tab label="FOV">
+            <md-subheader>Dynamic FOV</md-subheader>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the minimum speed where the FOV starts to be affected.</md-tooltip>
+                    Min FOV Speed
+                </p>
+                <md-slider flex ng-model="fovMinSpeed" min="0" max="400" step="1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ fovMinSpeedRounded }} {{ distanceUnits.label }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the maximum speed where the FOV reaches its maximum.</md-tooltip>
+                    Max FOV Speed
+                </p>
+                <md-slider flex ng-model="fovMaxSpeed" min="0" max="400" step="1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ fovMaxSpeedRounded }} {{ distanceUnits.label }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the maximum added FOV while at speed.</md-tooltip>
+                    FOV Increase
+                </p>
+                <md-slider flex ng-model="presetData.fovAddDegrees" min="0" max="50" step="1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.fovAddDegrees }} deg</span>
+            </md-list-item>
+        </md-tab>
+        <md-tab label="Other">
+            <md-subheader>Pitch and Roll</md-subheader>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the smoothing of pitch motion due to bumps.</md-tooltip>
+                    Pitch Smoothing
+                </p>
+                <md-slider flex ng-model="presetData.pitchSmoothing" min="0" max="1" step="0.01" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.pitchSmoothing }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the smoothing of roll motion due to bumps.</md-tooltip>
+                    Roll Smoothing
+                </p>
+                <md-slider flex ng-model="presetData.rollSmoothing" min="0" max="1" step="0.01" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.rollSmoothing }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts how much the camera pitch stays aligned with the horizon (useful for VR motion sickness).</md-tooltip>
+                    Lock Pitch to Horizon
+                </p>
+                <md-slider flex ng-model="presetData.lockPitchToHorizon" min="0" max="1" step="0.01" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.lockPitchToHorizon }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts how much the camera roll stays aligned with the horizon (useful for VR motion sickness).</md-tooltip>
+                    Lock Pitch to Horizon
+                </p>
+                <md-slider flex ng-model="presetData.lockRollToHorizon" min="0" max="1" step="0.01" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.lockRollToHorizon }}</span>
+            </md-list-item>
+        </md-tab>
+    </md-tabs>
+    <div class="edc-main-footer" ng-show="expanded">
+        <form ng-submit="onCreatePreset()" class="edc-save-container">
+            <input ng-disabled="settings.chosenPreset != 'Custom'" placeholder="Preset name" ng-model="presetName" />
+            <md-button type="submit" class="md-button md-accent md-raised" md-no-ink ng-disabled="!presetName || settings.chosenPreset != 'Custom'">
+                <md-icon>add</md-icon>
+                Create Preset
+            </md-button>
+        </form>
+        <md-button ng-mousedown="beginResize($event)" class="edc-resize">
+            <md-icon>call_made</md-icon>
+        </md-button>
+    </div>
+</div>
