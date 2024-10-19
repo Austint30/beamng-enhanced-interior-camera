@@ -134,7 +134,6 @@ function C:loadSettingsPreset()
 end
 
 function C:onSettingsChanged()
-  log("I", "units", settings.getValue('uiUnits'))
   self.physicsFactor = settings.getValue('cameraDriverPhysics') / 100 -- 0..1 multiplier
   self.autocenter = settings.getValue('cameraDriverAutocenter')
   self.allowSeatAdjustments = settings.getValue('cameraDriverAllowSeatAdjustments')
@@ -146,6 +145,7 @@ function C:onSettingsChanged()
   self.edcSettings = self:loadSettingsPreset()
   self.speedshake:setAmpMultiplier(self:getSettingsValue('speedShakeAmp'))
   self.speedshake:setFreqMultiplier(self:getSettingsValue('speedShakeFreq'))
+  self.speedshake:setOctaves(self:getSettingsValue('speedShakeDetail'))
   self.speedshake:setMinSpeed(self:getSettingsValue('speedShakeMinSpeed'))
   self.speedshake:setMaxSpeed(self:getSettingsValue('speedShakeMaxSpeed'))
 
@@ -193,7 +193,6 @@ function C:updateFovSpeedMod(data)
   local low = self.edcSettings.fovMinSpeed
 
   local rawFovScale = clamp((speed-low) / (high-low), 0, 1)
-  log("I", "rawFovScale", rawFovScale)
 
   local smoothedFovScale = fovSmoother:get(rawFovScale, data.dt)
 

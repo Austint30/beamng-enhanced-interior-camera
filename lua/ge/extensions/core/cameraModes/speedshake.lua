@@ -2,6 +2,8 @@
 -- If a copy of the bCDDL was not distributed with this
 -- file, You can obtain one at http://beamng.com/bCDDL-1.1.txt
 
+local perlin = require('core/enhanceddriver/perlin')
+
 local C = {}
 C.__index = C
 
@@ -10,6 +12,7 @@ function C:init(amp, freq, disableWhileFalling)
   self.hidden = true
   self.amp = amp or vec3(0.01, 0.007, 0.01)
   self.freq = freq or vec3(15.0, 15.0, 15.0)
+  self.octaves = 3
   self.timeOffset = vec3(0, math.random(), math.random())
   self.time = 0
   self.minSpeed = 35
@@ -38,6 +41,11 @@ function C:setMaxSpeed(speed)
   self.maxSpeed = speed
 end
 
+function C:setOctaves(octaves)
+  log("I", "setOctaves", octaves)
+  self.octaves = octaves
+end
+
 function C:getShakeStrength(data)
 
   local speed = data.vel:length() -- magnitude
@@ -57,9 +65,9 @@ function C:update(data, shakeStrength)
 
   self.time = self.time + data.dt
   local offset = vec3(
-      self.randAmp.x * math.sin(math.pi * 2 * (self.timeOffset.x + self.time) * freq.x),
-      self.randAmp.y * math.sin(math.pi * 2 * (self.timeOffset.y + self.time) * freq.y),
-      self.randAmp.z * math.sin(math.pi * 2 * (self.timeOffset.z + self.time) * freq.z)
+      perlin:OctavePerlin(self.time, 0, 0, self.octaves, amp.x, freq.x),
+      perlin:OctavePerlin(0, self.time, 0, self.octaves, amp.y, freq.y),
+      perlin:OctavePerlin(0, 0, self.time, self.octaves, amp.z, freq.z)
   )
 
   local strength = shakeStrength or self:getShakeStrength(data)
@@ -82,9 +90,6 @@ function C:update(data, shakeStrength)
   local q = quatFromEuler(rotEuler.x, rotEuler.y, rotEuler.z)
 
   data.res.rot = data.res.rot * q
-  -- data.res.pos = data.res.pos + (offset/60)*strength
-  self.timeOffset = vec3(0, math.random(), math.random())
-  self.randAmp = vec3(amp.x*math.random(), amp.y*math.random(), amp.z*math.random())
 end
 
 -- DO NOT CHANGE CLASS IMPLEMENTATION BELOW

@@ -79,7 +79,7 @@
                     <md-tooltip>Adjusts the amplitude of the speed shake effect (shakes softer/harder).</md-tooltip>
                     Amplitude
                 </p>
-                <md-slider flex ng-model="presetData.speedShakeAmp" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                <md-slider flex ng-model="presetData.speedShakeAmp" min="0" max="10" step="0.1" aria-label="_" ng-change="onSettingChanged()">
                 </md-slider>
                 <span class="edc-slider-value">{{ presetData.speedShakeAmp }}</span>
             </md-list-item>
@@ -88,9 +88,18 @@
                     <md-tooltip>Adjusts the frequency of the speed shake effect (shakes slower/faster).</md-tooltip>
                     Frequency
                 </p>
-                <md-slider flex ng-model="presetData.speedShakeFreq" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                <md-slider flex ng-model="presetData.speedShakeFreq" min="0" max="10" step="0.1" aria-label="_" ng-change="onSettingChanged()">
                 </md-slider>
                 <span class="edc-slider-value">{{ presetData.speedShakeFreq }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the detail of the speed shake effect. (Perlin noise octaves)</md-tooltip>
+                    Detail
+                </p>
+                <md-slider flex ng-model="presetData.speedShakeDetail" min="1" max="10" step="1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.speedShakeDetail }}</span>
             </md-list-item>
             <md-list-item md-no-ink>
                 <p>
@@ -117,7 +126,7 @@
                     <md-tooltip>Adjusts the amplitude of the drift shake effect (shakes softer/harder).</md-tooltip>
                     Amplitude
                 </p>
-                <md-slider flex ng-model="presetData.driftShakeAmp" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                <md-slider flex ng-model="presetData.driftShakeAmp" min="0" max="10" step="0.1" aria-label="_" ng-change="onSettingChanged()">
                 </md-slider>
                 <span class="edc-slider-value">{{ presetData.driftShakeAmp }}</span>
             </md-list-item>
@@ -126,9 +135,18 @@
                     <md-tooltip>Adjusts the frequency of the drift shake effect (shakes slower/faster).</md-tooltip>
                     Frequency
                 </p>
-                <md-slider flex ng-model="presetData.driftShakeFreq" min="0" max="5" step="0.1" aria-label="_" ng-change="onSettingChanged()">
+                <md-slider flex ng-model="presetData.driftShakeFreq" min="0" max="10" step="0.1" aria-label="_" ng-change="onSettingChanged()">
                 </md-slider>
                 <span class="edc-slider-value">{{ presetData.driftShakeFreq }}</span>
+            </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the detail of the drift shake effect. (Perlin noise octaves)</md-tooltip>
+                    Detail
+                </p>
+                <md-slider flex ng-model="presetData.driftShakeDetail" min="1" max="10" step="1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.driftShakeDetail }}</span>
             </md-list-item>
         </md-tab>
         <md-tab label="FOV">
