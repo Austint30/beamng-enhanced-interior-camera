@@ -432,7 +432,7 @@ function C:update(data)
 
   local pitchAngleFromForces = math.atan2(scaledUpForce + scaledFwdForce, 1)
 
-  camRot = rotateEuler(math.rad(self.camRot.x) + lookAheadAngleOffset, basePitchAngle - pitchAngleFromForces, camRoll, camRot) -- stable hood line
+  camRot = rotateEuler(math.rad(self.camRot.x) + lookAheadAngleOffset, math.rad(self.camRot.y) + (basePitchAngle - pitchAngleFromForces), camRoll, camRot) -- stable hood line
 
   -- Pitch smoothing
   ----local roll, pitch, yaw = data.veh:getRollPitchYawAngularVelocity()
