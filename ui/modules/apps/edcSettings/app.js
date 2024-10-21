@@ -173,7 +173,7 @@ angular.module("beamng.apps").directive("edcSettings", [
         }
 
         function saveLayout() {
-          // $rootScope.$broadcast('appContainer:save');
+          $rootScope.$broadcast('appContainer:save');
         }
 
         scope.onPresetChanged = onPresetChanged;
@@ -182,12 +182,12 @@ angular.module("beamng.apps").directive("edcSettings", [
         scope.onDeletePreset = onDeletePreset;
         scope.beginTranslate = function (event) {
           scope.translateStart(event);
-          $document.on("mouseup", saveLayout);
+          // $document.on("mouseup", saveLayout);
         };
 
         scope.beginResize = function (event) {
           scope.resizeStart(event);
-          $document.on("mouseup", saveLayout);
+          // $document.on("mouseup", saveLayout);
         };
 
         scope.closeApp = function () {
