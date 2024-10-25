@@ -198,9 +198,6 @@ angular.module("beamng.apps").directive("edcSettings", [
         scope.$on("SettingsChanged", function (event, data) {
           scope.$evalAsync(function () {
             scope.distanceUnits = units[data.values.uiUnitLength];
-            console.log(
-              "distanceUnits: " + JSON.stringify(scope.distanceUnits)
-            );
             updatePresetData();
           });
         });

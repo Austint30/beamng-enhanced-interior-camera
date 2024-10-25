@@ -424,15 +424,15 @@ function C:update(data)
     scaledFwdForce = smoothedFwdForce * self.gForceYBase * self:getSettingsValue('gForceDecel')
   end
 
-  local basePitchAngle = lerp(
-    math.atan2(scaledUpForce + scaledFwdForce, 1),
-    camPitch,
+  local pitchAngleFromForces = -math.atan2(scaledUpForce + scaledFwdForce, 1)
+
+  local finalCamPitch = lerp(
+    pitchAngleFromForces,
+    camPitch + pitchAngleFromForces,
     self.edcSettings.lockPitchToHorizon
   )
 
-  local pitchAngleFromForces = math.atan2(scaledUpForce + scaledFwdForce, 1)
-
-  camRot = rotateEuler(math.rad(self.camRot.x) + lookAheadAngleOffset, math.rad(self.camRot.y) + (basePitchAngle - pitchAngleFromForces), camRoll, camRot) -- stable hood line
+  camRot = rotateEuler(math.rad(self.camRot.x) + lookAheadAngleOffset, math.rad(self.camRot.y) + finalCamPitch, camRoll, camRot) -- stable hood line
 
   -- Pitch smoothing
   ----local roll, pitch, yaw = data.veh:getRollPitchYawAngularVelocity()

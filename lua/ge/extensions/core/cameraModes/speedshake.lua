@@ -42,7 +42,6 @@ function C:setMaxSpeed(speed)
 end
 
 function C:setOctaves(octaves)
-  log("I", "setOctaves", octaves)
   self.octaves = octaves
 end
 

@@ -24,7 +24,7 @@
       "rollSmoothing": 0.75
     },
     "Intense": {
-      "gForceZ": 1.25,
+      "gForceZ": 1.75,
       "gForceAccel": 1.25,
       "gForceDecel": 1.25,
       "gForceZThreshold": 0,
