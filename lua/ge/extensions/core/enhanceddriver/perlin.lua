@@ -1,3 +1,7 @@
+-- This Source Code Form is subject to the terms of the bCDDL, v. 1.1.
+-- If a copy of the bCDDL was not distributed with this
+-- file, You can obtain one at http://beamng.com/bCDDL-1.1.txt
+
 --[[
     Implemented as described here:
     http://flafla2.github.io/2014/08/09/perlinnoise.html
@@ -33,6 +37,7 @@ for i=0,255 do
     C.p[i+256] = permutation[i+1]
 end
 
+-- Taken from lua/ge/extensions/flowgraph/nodes/util/perlinNoise.lua
 function C:OctavePerlin(x, y, z, octaves, amplitude, frequency)
     local total = 0
     local maxValue = 0
