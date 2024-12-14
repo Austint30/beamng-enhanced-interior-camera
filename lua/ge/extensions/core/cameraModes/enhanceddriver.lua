@@ -2,8 +2,8 @@
 -- If a copy of the bCDDL was not distributed with this
 -- file, You can obtain one at http://beamng.com/bCDDL-1.1.txt
 
-local vecY = vec3(0,1,0)
-local vecZ = vec3(0,0,1)
+local vecY = vec3(0, 1, 0)
+local vecZ = vec3(0, 0, 1)
 local min, max, abs = math.min, math.max, math.abs
 
 local qtmp = quat()
@@ -82,13 +82,12 @@ function C:onVehicleCameraConfigChanged()
 end
 
 function C:loadSettingsPreset()
-
   local defaultPresets = {
-    ['Default']=true, 
-    ['Intense']=true, 
-    ['Smooth']=true,
-    ['VR (Comfort)']=true,
-    ['VR (Thrill)']=true
+    ['Default'] = true,
+    ['Intense'] = true,
+    ['Smooth'] = true,
+    ['VR (Comfort)'] = true,
+    ['VR (Thrill)'] = true
   }
 
   local edcSettings = self.defaultSettings
@@ -188,23 +187,23 @@ function C:updateFovSpeedMod(data)
   --   data.res.fov = self.manualzoom.fovDefault
   --   return
   -- end
-  
+
   local high = self.edcSettings.fovMaxSpeed
   local low = self.edcSettings.fovMinSpeed
 
-  local rawFovScale = clamp((speed-low) / (high-low), 0, 1)
+  local rawFovScale = clamp((speed - low) / (high - low), 0, 1)
 
   local smoothedFovScale = fovSmoother:get(rawFovScale, data.dt)
 
-  local addedFov = smoothedFovScale*self.edcSettings.fovAddDegrees
+  local addedFov = smoothedFovScale * self.edcSettings.fovAddDegrees
 
   local newFov = self.manualzoom.fov + addedFov
   data.res.fov = newFov
 end
 
-local dxSmoother = newTemporalSmoothing(3,1)
-local dySmoother = newTemporalSmoothing(3,1)
-local dzSmoother = newTemporalSmoothing(3,1)
+local dxSmoother = newTemporalSmoothing(3, 1)
+local dySmoother = newTemporalSmoothing(3, 1)
+local dzSmoother = newTemporalSmoothing(3, 1)
 
 local currentCarPos, prevCarPos = vec3(), vec3()
 local rot = vec3()
@@ -232,21 +231,21 @@ function C:update(data)
     local vehicleName = data.veh:getJBeamFilename()
     local vehConfigs = settings.getValue('cameraDriverVehicleConfigs')
     if type(vehConfigs) ~= "string" then vehConfigs = "{}" end
-    vehConfigs = vehConfigs:gsub("'",'"') -- fix INI values that passed through javascript (e.g. when opening Options menu)
-    vehConfigs = jsonDecode(vehConfigs) -- and then deserialize, so we can follow the user settings
-    local vehConfig = vehConfigs[vehicleName] or {0,0,0}
+    vehConfigs = vehConfigs:gsub("'", '"') -- fix INI values that passed through javascript (e.g. when opening Options menu)
+    vehConfigs = jsonDecode(vehConfigs)    -- and then deserialize, so we can follow the user settings
+    local vehConfig = vehConfigs[vehicleName] or { 0, 0, 0 }
     self.seatPosition = vec3(0, vehConfig[2], vehConfig[3])
     self.seatRotation = vehConfig[1]
   end
 
   -- process mouse rotation input
-  self.relativeYaw   = clamp(self.relativeYaw   + 0.1*MoveManager.yawRelative  , -1, 1)
-  self.relativePitch = clamp(self.relativePitch - 0.3*MoveManager.pitchRelative, -1, 1)
+  self.relativeYaw   = clamp(self.relativeYaw + 0.1 * MoveManager.yawRelative, -1, 1)
+  self.relativePitch = clamp(self.relativePitch - 0.3 * MoveManager.pitchRelative, -1, 1)
 
   -- process kbd/pad rotation input
-  local absYaw = 0
-  local absPitch = 0
-  local filter = core_camera.getLastFilter()
+  local absYaw       = 0
+  local absPitch     = 0
+  local filter       = core_camera.getLastFilter()
 
   if self.autocenter and data.veh then
     currentCarPos:set(data.veh:getPositionXYZ())
@@ -270,25 +269,26 @@ function C:update(data)
   if self.autocenter and not self.mouseIsLocked and self.vehicleIsMoving then
     -- camera will go back to center as soon as the controller is released
     absPitch = MoveManager.pitchDown - MoveManager.pitchUp
-    absYaw   = MoveManager.yawRight  - MoveManager.yawLeft
+    absYaw   = MoveManager.yawRight - MoveManager.yawLeft
     if filter == FILTER_KBD or filter == FILTER_KBD2 then
       -- keyboard look-to-rear key combo (press both left+right to look back)
-      absYaw = 0.5*(MoveManager.yawRight - MoveManager.yawLeft)
+      absYaw = 0.5 * (MoveManager.yawRight - MoveManager.yawLeft)
       if MoveManager.yawLeft > 0 and MoveManager.yawRight > 0 then
         absYaw = absYaw + sign(self.camRot.x)
       end
     end
   else
     -- camera will stay where it is when the controller is released
-    self.relativeYaw   = self.relativeYaw   + (MoveManager.yawRight  - MoveManager.yawLeft) * 0.01 * data.dt * 60
+    self.relativeYaw   = self.relativeYaw + (MoveManager.yawRight - MoveManager.yawLeft) * 0.01 * data.dt * 60
     self.relativePitch = self.relativePitch + (MoveManager.pitchDown - MoveManager.pitchUp) * 0.04 * data.dt * 60
   end
 
-  local sideInput = self.relativeYaw   + absYaw
+  local sideInput = self.relativeYaw + absYaw
   local vertInput = self.relativePitch + absPitch
   if data.openxrSessionRunning and self.openXRsnapTurnDriver then
     local amount = abs(sideInput)
-    sideInput = sign(sideInput) * (amount > 0.9 and 1 or (amount > 0.1 and 0.5 or 0)) -- snap head yaw to 50% and 100% degrees
+    sideInput = sign(sideInput) *
+        (amount > 0.9 and 1 or (amount > 0.1 and 0.5 or 0)) -- snap head yaw to 50% and 100% degrees
   end
 
   -- convert input into angles
@@ -302,11 +302,11 @@ function C:update(data)
   rot:set(math.rad(self.camRot.x), math.rad(self.camRot.y), math.rad(self.camRot.z))
   -- avoid physical discomfort by removing smoothers from VR
   if not data.openxrSessionRunning then
-  local ratiox = 1 / (data.dt * 50)
-  local ratioy = 1 / (data.dt * 10)
-  if not self.autocenter then ratioy = 1 / (data.dt * 50) end
-  rot.x = 1 / (ratiox + 1) * rot.x + (ratiox / (ratiox + 1)) * self.camLastRot.x
-  rot.y = 1 / (ratioy + 1) * rot.y + (ratioy / (ratioy + 1)) * self.camLastRot.y
+    local ratiox = 1 / (data.dt * 50)
+    local ratioy = 1 / (data.dt * 10)
+    if not self.autocenter then ratioy = 1 / (data.dt * 50) end
+    rot.x = 1 / (ratiox + 1) * rot.x + (ratiox / (ratiox + 1)) * self.camLastRot.x
+    rot.y = 1 / (ratioy + 1) * rot.y + (ratioy / (ratioy + 1)) * self.camLastRot.y
   end
   if data.openxrSessionRunning then
     rot.y = 0 -- remove manual head tilt
@@ -338,12 +338,12 @@ function C:update(data)
   end
 
   -- Smooth car fwd direction
-  local lerpedCarFwd = lerp(self.lastCarFwd, carFwd, (1-self.edcSettings.pitchSmoothing)*data.dt*20)
+  local lerpedCarFwd = lerp(self.lastCarFwd, carFwd, (1 - self.edcSettings.pitchSmoothing) * data.dt * 20)
   carFwd.z = lerpedCarFwd.z
   self.lastCarFwd:set(carFwd)
 
   -- Smooth car left direction
-  local lerpedCarLeft = lerp(self.lastCarLeft, carLeft, (1-self.edcSettings.rollSmoothing)*data.dt*20)
+  local lerpedCarLeft = lerp(self.lastCarLeft, carLeft, (1 - self.edcSettings.rollSmoothing) * data.dt * 20)
   carLeft.z = lerpedCarLeft.z
   self.lastCarLeft:set(carLeft)
 
@@ -352,24 +352,26 @@ function C:update(data)
   camRot:setFromDir(-push3(carFwd))
   camUp:setRotate(camRot, vecZ)
   local carRoll = math.atan2(push3(camUp):dot(-push3(carLeft)), camUp:dot(carUp))
-  local carRollFactor = 1 - self.edcSettings.lockRollToHorizon * smootheststep(clamp(1.42*carUp.z, 0, 1))
+  local carRollFactor = 1 - self.edcSettings.lockRollToHorizon * smootheststep(clamp(1.42 * carUp.z, 0, 1))
   local camRoll = carRoll * carRollFactor
 
   local carPitch = math.atan2(push3(vecZ):dot(-push3(carFwd)), camUp:dot(carUp))
-  local carPitchFactor = self.edcSettings.lockPitchToHorizon * smoothstep(clamp(1.2*carUp.z, 0, 1))
+  local carPitchFactor = self.edcSettings.lockPitchToHorizon * smoothstep(clamp(1.2 * carUp.z, 0, 1))
   local camPitch = carPitch * carPitchFactor
 
   -- Look-ahead angle
-  self.fwdSpeed = lerp(self.fwdSpeed, -data.vel:length() * push3(data.vel):normalized():dot(carFwd), data.dt * ( 1.5 - self.lookAheadSmoothness))
+  self.fwdSpeed = lerp(self.fwdSpeed, -data.vel:length() * push3(data.vel):normalized():dot(carFwd),
+    data.dt * (1.5 - self.lookAheadSmoothness))
   nRockPos:set(push3(carFwd) * (1 - self.rockPos:length() / self.lookAheadSmoothness) + self.rockPos)
   nRockPos:normalize()
   local lookAheadAngle = data.openxrSessionRunning and 0 or self.lookAheadAngle -- disable LookAhead while in VR
-  local lookAheadAngleOffset = math.atan2(nRockPos.x * carFwd.y - nRockPos.y * carFwd.x, nRockPos.x * carFwd.x + nRockPos.y * carFwd.y)
+  local lookAheadAngleOffset = math.atan2(nRockPos.x * carFwd.y - nRockPos.y * carFwd.x,
+    nRockPos.x * carFwd.x + nRockPos.y * carFwd.y)
   self.rockPos:setScaled((1 - data.dt * 0.1) * clamp(self.fwdSpeed / 20, 0, 1))
   lookAheadAngleOffset = clamp(lookAheadAngleOffset, -1.1, 1.1) * lookAheadAngle * clamp(self.fwdSpeed / 15, 0, 1)
 
   -- Tilt the camera forward and back depending on the g-force
-  local accel = carRot:inversed()*data.vel - carRot:inversed()*data.prevVel
+  local accel = carRot:inversed() * data.vel - carRot:inversed() * data.prevVel
 
   -- Smooth acceleration data
   accel.x = velSmootherX:get(accel.x, data.dt)
@@ -377,20 +379,20 @@ function C:update(data)
   accel.z = velSmootherZ:get(accel.z, data.dt)
 
   -- log("I", "vel", tostring(carRot:inversed()*data.vel))
-  local rawFwdForce = -accel.y / (data.dt*100)
-  local rawUpForce = -accel.z / (data.dt*100)
+  local rawFwdForce = -accel.y / (data.dt * 100)
+  local rawUpForce = -accel.z / (data.dt * 100)
 
   -- Reduce impact of braking being detected as upward acceleration
-  rawUpForce = lerp(0, rawUpForce, clamp(rawUpForce/-0.3, 0, 1))
+  rawUpForce = lerp(0, rawUpForce, clamp(rawUpForce / -0.3, 0, 1))
   -- log("I", "", "Accelerating up power   "..tostring(rawUpForce))
-  
+
   -- Reduce shaking while idle by blending the g-force effect in at speed
-  local gForceEffectFactor = clamp(data.vel:length()/4, 0, 1)
+  local gForceEffectFactor = clamp(data.vel:length() / 4, 0, 1)
   rawFwdForce = lerp(0, rawFwdForce, gForceEffectFactor)
   rawUpForce = lerp(0, rawUpForce, gForceEffectFactor)
 
-  local gForceZThreshold = self.edcSettings.gForceZThreshold/100
-  local gForceYThreshold = self.edcSettings.gForceYThreshold/100
+  local gForceZThreshold = self.edcSettings.gForceZThreshold / 100
+  local gForceYThreshold = self.edcSettings.gForceYThreshold / 100
 
   -- Add an activation threshold to forces ------------------------
   if rawUpForce < -gForceZThreshold then
@@ -432,7 +434,8 @@ function C:update(data)
     self.edcSettings.lockPitchToHorizon
   )
 
-  camRot = rotateEuler(math.rad(self.camRot.x) + lookAheadAngleOffset, math.rad(self.camRot.y) + finalCamPitch, camRoll, camRot) -- stable hood line
+  camRot = rotateEuler(math.rad(self.camRot.x) + lookAheadAngleOffset, math.rad(self.camRot.y) + finalCamPitch, camRoll,
+    camRot) -- stable hood line
 
   -- Pitch smoothing
   ----local roll, pitch, yaw = data.veh:getRollPitchYawAngularVelocity()
@@ -458,15 +461,17 @@ function C:update(data)
     local origSpawnAABB = data.veh:getSpawnLocalAABB()
     local minExt = origSpawnAABB.minExtents
     local maxExt = origSpawnAABB.maxExtents
-    self.marginX = (maxExt.x - minExt.x)*0.5 - abs(data.veh:getInitialNodePosition(camNodeID or 0).x-(maxExt.x + minExt.x)*0.5) -- distance to boundingbox lateral
+    self.marginX = (maxExt.x - minExt.x) * 0.5 -
+        abs(data.veh:getInitialNodePosition(camNodeID or 0).x - (maxExt.x + minExt.x) * 0.5) -- distance to boundingbox lateral
   end
 
   -- physics+static position combination
   combinedPos:setLerp(self.camPosInitialLocal, camPosLocal, self.physicsFactor)
 
   -- left/right head sticking out position
-  local minAngle = 70 -- starting angle when driver will start looking back
-  local headOut = clamp(abs(self.camRot.x) - minAngle, 0, maxAngle) / (maxAngle - minAngle) -- how much the head is looking back, from 0 to 1
+  local minAngle = 70       -- starting angle when driver will start looking back
+  local headOut = clamp(abs(self.camRot.x) - minAngle, 0, maxAngle) /
+      (maxAngle - minAngle) -- how much the head is looking back, from 0 to 1
   local lateralFactor = headOut
   local forwardFactor = headOut
   local verticalFactor = headOut
@@ -484,8 +489,8 @@ function C:update(data)
   end
   rotationOffset:set(
     lateralOffset * lateralFactor * sign(-self.camRot.x), -- stick head out (or towards center)
-    forwardOffset * forwardFactor,                       -- dodge the B-pillar (or bucket seat/head rest)
-    verticalOffset * verticalFactor -- dodge the roof
+    forwardOffset * forwardFactor,                        -- dodge the B-pillar (or bucket seat/head rest)
+    verticalOffset * verticalFactor                       -- dodge the roof
   )
 
   -- up/down head bobbing, to more easily discover occluded switches in the cockpit
@@ -501,17 +506,17 @@ function C:update(data)
   rotationOffset.x = sign(-self.camRot.x) * max(abs(rotationOffset.x), abs(wiggleX))
 
   -- apply seat adjustment
-  local dr, dy, dz = 0, 0 ,0
+  local dr, dy, dz = 0, 0, 0
   if self.allowSeatAdjustments then
-    dr = dxSmoother:getCapped(MoveManager.left     - MoveManager.right  , data.dt)
-    dy = dySmoother:getCapped(MoveManager.backward - MoveManager.forward, data.dt)
-    dz = dzSmoother:getCapped(MoveManager.up       - MoveManager.down   , data.dt)
+    dr                  = dxSmoother:getCapped(MoveManager.left - MoveManager.right, data.dt)
+    dy                  = dySmoother:getCapped(MoveManager.backward - MoveManager.forward, data.dt)
+    dz                  = dzSmoother:getCapped(MoveManager.up - MoveManager.down, data.dt)
     local adjustedSpeed = data.fastSpeedModifier and data.speed * 3 or data.speed
-    local pdr = dr * data.dt * adjustedSpeed * 2
-    local pdy = dy * data.dt * adjustedSpeed / 50
-    local pdz = dz * data.dt * adjustedSpeed / 50
-    local posLimit = 0.4
-    self.seatRotation   = clamp(self.seatRotation   + pdr, -30, 20)
+    local pdr           = dr * data.dt * adjustedSpeed * 2
+    local pdy           = dy * data.dt * adjustedSpeed / 50
+    local pdz           = dz * data.dt * adjustedSpeed / 50
+    local posLimit      = 0.4
+    self.seatRotation   = clamp(self.seatRotation + pdr, -30, 20)
     self.seatPosition.y = clamp(self.seatPosition.y + pdy, -posLimit, posLimit)
     self.seatPosition.z = clamp(self.seatPosition.z + pdz, -posLimit, posLimit)
   end
@@ -519,11 +524,15 @@ function C:update(data)
     self.saveTimeout = self.saveTimeout - data.dt
   end
   if dr ~= 0 then
-    ui_message({txt='ui.camera.driverTiltAdjusted', context={vehicleName = data.veh:getJBeamFilename(), angle=self.seatRotation}}, 2, 'cameramode')
+    ui_message(
+      { txt = 'ui.camera.driverTiltAdjusted', context = { vehicleName = data.veh:getJBeamFilename(), angle = self.seatRotation } },
+      2, 'cameramode')
     self.saveTimeout = 1
   end
   if dy ~= 0 or dz ~= 0 then
-    ui_message({txt='ui.camera.driverPositionAdjusted', context={vehicleName = data.veh:getJBeamFilename(), y=self.seatPosition.y, z=self.seatPosition.z}}, 2, 'cameramode')
+    ui_message(
+      { txt = 'ui.camera.driverPositionAdjusted', context = { vehicleName = data.veh:getJBeamFilename(), y = self.seatPosition.y, z = self.seatPosition.z } },
+      2, 'cameramode')
     self.saveTimeout = 1
   end
 
@@ -540,31 +549,31 @@ function C:update(data)
     local vehicleName = data.veh:getJBeamFilename()
     local vehConfigs = settings.getValue('cameraDriverVehicleConfigs')
     if type(vehConfigs) ~= "string" then vehConfigs = "{}" end
-    vehConfigs = vehConfigs:gsub("'",'"') -- fix INI values that passed through javascript (e.g. when opening Options menu)
-    vehConfigs = jsonDecode(vehConfigs) -- and then deserialize, so we can follow the user settings
+    vehConfigs = vehConfigs:gsub("'", '"') -- fix INI values that passed through javascript (e.g. when opening Options menu)
+    vehConfigs = jsonDecode(vehConfigs)    -- and then deserialize, so we can follow the user settings
     vehConfigs[vehicleName] = vehConfig
     settings.setValue('cameraDriverVehicleConfigs', jsonEncode(vehConfigs))
-    settings.setValue('cameraDriverFov', data.res.fov)
+    settings.setValue('cameraDriverFov', self.manualzoom.fov)
     self.saveTimeout = nil
   end
 
   self.speedshake:update(data)
-  
+
   -- Detect angle of drift and apply camera shake
   -- (Is it possible to do apply this with wheel slip instead?)
-  local flatVelocity = carRot:inversed()*data.vel
+  local flatVelocity = carRot:inversed() * data.vel
   flatVelocity.z = 0
-  flatVelocity = carRot*flatVelocity
+  flatVelocity = carRot * flatVelocity
 
   local driftAngle = carRot:dot(quatFromDir(flatVelocity))
 
   if driftAngle >= 0.5 then
-    driftAngle = 1-driftAngle
+    driftAngle = 1 - driftAngle
   end
 
-  driftAngle = driftAngle*1.5
+  driftAngle = driftAngle * 1.5
 
-  driftAngle = lerp(0, driftAngle, clamp(flatVelocity:length()/10, 0, 1))
+  driftAngle = lerp(0, driftAngle, clamp(flatVelocity:length() / 10, 0, 1))
 
   self.driftshake:update(data, driftAngle)
   self.hasResetted = false
