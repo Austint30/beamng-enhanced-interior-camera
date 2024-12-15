@@ -7,8 +7,7 @@ $zipPath = Join-Path -Path $distPath -ChildPath "enhanceddriver.zip"
 $srcFiles = @(
     "lua",
     "settings",
-    "ui",
-    "mod_info"
+    "ui"
 )
 
 # Clear the dist folder if it exists
