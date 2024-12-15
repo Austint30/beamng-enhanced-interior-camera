@@ -1,3 +1,5 @@
+#Requires -Version 7.0
+
 <#
 .SYNOPSIS
     Packages the Enhanced Interior Camera mod into a zip file.
