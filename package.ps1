@@ -1,10 +1,15 @@
 # Define the paths
 $scriptPath = $PSScriptRoot
 $distPath = Join-Path -Path $scriptPath -ChildPath "dist"
-$luaPath = Join-Path -Path $scriptPath -ChildPath "lua"
-$settingsPath = Join-Path -Path $scriptPath -ChildPath "settings"
-$uiPath = Join-Path -Path $scriptPath -ChildPath "ui"
 $zipPath = Join-Path -Path $distPath -ChildPath "enhanceddriver.zip"
+
+# Source files to be zipped
+$srcFiles = @(
+    "lua",
+    "settings",
+    "ui",
+    "mod_info"
+)
 
 # Clear the dist folder if it exists
 if (Test-Path -Path $distPath) {
@@ -14,15 +19,16 @@ if (Test-Path -Path $distPath) {
 # Create the dist folder
 New-Item -Path $distPath -ItemType Directory
 
-# Create a zip file of the lua, settings, and ui folders
+# Create a temporary folder for zipping
 Add-Type -AssemblyName 'System.IO.Compression.FileSystem'
 $zipTempFolder = Join-Path -Path $scriptPath -ChildPath "zip_temp"
 New-Item -Path $zipTempFolder -ItemType Directory
 
 # Copy folders to a temporary location for zipping
-Copy-Item -Path $luaPath -Destination $zipTempFolder -Recurse
-Copy-Item -Path $settingsPath -Destination $zipTempFolder -Recurse
-Copy-Item -Path $uiPath -Destination $zipTempFolder -Recurse
+foreach ($item in $srcFiles) {
+    $folderPath = Join-Path -Path $scriptPath -ChildPath $item
+    Copy-Item -Path $folderPath -Destination $zipTempFolder -Recurse
+}
 
 # Create the zip file from the temporary location
 [System.IO.Compression.ZipFile]::CreateFromDirectory($zipTempFolder, $zipPath)
