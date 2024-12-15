@@ -183,6 +183,15 @@ file, You can obtain one at http://beamng.com/bCDDL-1.1.txt
                 </md-slider>
                 <span class="edc-slider-value">{{ presetData.fovAddDegrees }} deg</span>
             </md-list-item>
+            <md-list-item md-no-ink>
+                <p>
+                    <md-tooltip>Adjusts the smoothing of the dynamic FOV effect.</md-tooltip>
+                    FOV Smoothing
+                </p>
+                <md-slider flex ng-model="presetData.fovSmoothRate" min="0" max="100" step="1" aria-label="_" ng-change="onSettingChanged()">
+                </md-slider>
+                <span class="edc-slider-value">{{ presetData.fovSmoothRate }}</span>
+            </md-list-item>
         </md-tab>
         <md-tab label="Other">
             <md-subheader>Pitch and Roll</md-subheader>

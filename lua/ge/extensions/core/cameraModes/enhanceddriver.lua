@@ -21,7 +21,6 @@ end
 local manualzoom = require('core/cameraModes/manualzoom')
 local shake = require('core/cameraModes/speedshake')
 
-local fovSmoother = newTemporalSmoothingNonLinear(10, 10)
 local gForceFwdSmoother = newTemporalSmoothingNonLinear(4, 4)
 local gForceUpSmoother = newTemporalSmoothingNonLinear(5, 5)
 
@@ -128,7 +127,7 @@ function C:loadSettingsPreset()
       mergedPreset[key] = value
     end
   end
-
+  print(dumps(mergedPreset))
   return mergedPreset
 end
 
@@ -150,6 +149,9 @@ function C:onSettingsChanged()
 
   self.driftshake:setAmpMultiplier(self:getSettingsValue('driftShakeAmp'))
   self.driftshake:setFreqMultiplier(self:getSettingsValue('driftShakeFreq'))
+
+  local fovSmoothRate = lerp(10, 0.5, self:getSettingsValue('fovSmoothRate') / 100)
+  self.fovSmoother = newTemporalSmoothingNonLinear(fovSmoothRate, fovSmoothRate)
 end
 
 function C:getSettingsValue(key)
@@ -193,7 +195,7 @@ function C:updateFovSpeedMod(data)
 
   local rawFovScale = clamp((speed - low) / (high - low), 0, 1)
 
-  local smoothedFovScale = fovSmoother:get(rawFovScale, data.dt)
+  local smoothedFovScale = self.fovSmoother:get(rawFovScale, data.dt)
 
   local addedFov = smoothedFovScale * self.edcSettings.fovAddDegrees
 
