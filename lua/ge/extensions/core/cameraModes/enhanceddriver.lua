@@ -60,6 +60,8 @@ function C:init()
 
   self.lastCarFwd = vec3()
   self.lastCarLeft = vec3()
+  self.currFov = 0
+  self.lastSmoothRate = 0
 
   self:onSettingsChanged()
 end
@@ -127,7 +129,6 @@ function C:loadSettingsPreset()
       mergedPreset[key] = value
     end
   end
-  print(dumps(mergedPreset))
   return mergedPreset
 end
 
@@ -151,7 +152,11 @@ function C:onSettingsChanged()
   self.driftshake:setFreqMultiplier(self:getSettingsValue('driftShakeFreq'))
 
   local fovSmoothRate = lerp(10, 0.5, self:getSettingsValue('fovSmoothRate') / 100)
-  self.fovSmoother = newTemporalSmoothingNonLinear(fovSmoothRate, fovSmoothRate)
+  if abs(fovSmoothRate - self.lastSmoothRate) > 0.1 then
+    -- Prevents a jutter effect when any setting is changed other than the FOV.
+    self.fovSmoother = newTemporalSmoothingNonLinear(fovSmoothRate, fovSmoothRate, self.currFov)
+  end
+  self.lastSmoothRate = fovSmoothRate
 end
 
 function C:getSettingsValue(key)
@@ -183,6 +188,7 @@ function C:reset()
 end
 
 function C:updateFovSpeedMod(data)
+  self.currFov = data.res.fov
   local speed = data.vel:length()
 
   -- if speed < self.minSpeedFovMod then
