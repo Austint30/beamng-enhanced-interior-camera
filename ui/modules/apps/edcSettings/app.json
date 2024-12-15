@@ -9,5 +9,8 @@
     "width": "420px",
     "height": "480px"
   },
-  "preserveAspectRatio": false
+  "preserveAspectRatio": false,
+  "types": [
+    "ui.apps.categories.utility"
+  ]
 }
