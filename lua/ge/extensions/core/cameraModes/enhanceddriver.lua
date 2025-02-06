@@ -62,8 +62,21 @@ function C:init()
   self.lastCarLeft = vec3()
   self.currFov = 0
   self.lastSmoothRate = 0
+  self.disabledCockpitApps = false
 
   self:onSettingsChanged()
+end
+
+function C:onCameraChanged()
+  self.disabledCockpitApps = false
+end
+
+function C:disableCockpitApps()
+  if not self.disabledCockpitApps then
+    -- Disable cockpit gui apps
+    guihooks.trigger('onCameraNameChanged', { name = 'driver' })
+    self.disabledCockpitApps = true
+  end
 end
 
 function C:initEnhancedDriverSettings()
@@ -224,6 +237,8 @@ local intermediateCamPos = vec3()
 local nRockPos, projectedRockPos = vec3(), vec3()
 
 function C:update(data)
+  self:disableCockpitApps()
+
   local carPos = data.pos
   -- retrieve camera node (except when resetting, because data is not reliable then)
   self.cameraResetted = max(self.cameraResetted - 1, 0)
