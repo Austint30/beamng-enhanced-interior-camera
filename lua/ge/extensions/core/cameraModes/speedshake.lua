@@ -62,7 +62,7 @@ function C:update(data, shakeStrength)
   local amp = self.amp * self.ampMult
   local freq = self.freq * self.freqMult
 
-  self.time = self.time + data.dt
+  self.time = self.time + (data.dt * be:getSimulationTimeScale())
   local offset = vec3(
       perlin:OctavePerlin(self.time, 0, 0, self.octaves, amp.x, freq.x),
       perlin:OctavePerlin(0, self.time, 0, self.octaves, amp.y, freq.y),
