@@ -21,6 +21,59 @@ end
 local manualzoom = require('core/cameraModes/manualzoom')
 local shake = require('core/cameraModes/speedshake')
 
+-- Normalize camera UI events so enhanceddriver looks like driver to the UI.
+-- Fixes cockpit UI showing when this camera is active.
+do
+  local gh = rawget(_G, 'guihooks')
+  if type(gh) == 'table' and type(gh.trigger) == 'function' and not gh._edc_wrapped then
+    local orig = gh.trigger
+    gh.trigger = function(evt, payload, ...)
+      -- onCameraNameChanged drives cockpit app hide/show
+      if evt == 'onCameraNameChanged' then
+        if type(payload) ~= 'table' then payload = { name = payload } end
+        if payload.name == 'enhanceddriver' then
+          log("I", "guihooks.trigger", "Remapping onCameraNameChanged: enhanceddriver -> driver")
+          payload.name = 'driver'
+        end
+        -- Options > Cameras and other UI consumers
+      elseif evt == 'CameraConfigChanged' and type(payload) == 'table' then
+        if payload.focusedCamName == 'enhanceddriver' then
+          log("I", "guihooks.trigger", "Remapping CameraConfigChanged.focusedCamName -> driver")
+          payload.focusedCamName = 'driver'
+        end
+      end
+      return orig(evt, payload, ...)
+    end
+    gh._edc_wrapped = true
+    log("I", "guihooks.trigger", "Installed enhanceddriver UI normalizer")
+  else
+    log("E", "guihooks.trigger", "Unable to install UI normalizer (guihooks missing or already wrapped)")
+  end
+end
+
+-- Also normalize extensions.hook('onCameraModeChanged', camName)
+do
+  local ex = rawget(_G, 'extensions')
+  if type(ex) == 'table' and type(ex.hook) == 'function' and not ex._edc_cam_wrap then
+    local origHook = ex.hook
+    ex.hook = function(evt, ...)
+      if evt == 'onCameraModeChanged' then
+        local camName = select(1, ...)
+        if camName == 'enhanceddriver' then
+          log("I", "extensions.hook", "Remapping onCameraModeChanged: enhanceddriver -> driver")
+          -- replace first arg and forward remaining args intact
+          return origHook(evt, 'driver', select(2, ...))
+        end
+      end
+      return origHook(evt, ...)
+    end
+    ex._edc_cam_wrap = true
+    log("I", "extensions.hook", "Installed enhanceddriver onCameraModeChanged normalizer")
+  else
+    log("E", "extensions.hook", "Unable to install normalizer (extensions.hook missing or already wrapped)")
+  end
+end
+
 local gForceFwdSmoother = newTemporalSmoothingNonLinear(4, 4)
 local gForceUpSmoother = newTemporalSmoothingNonLinear(5, 5)
 
@@ -63,12 +116,18 @@ function C:init()
   self.currFov = 0
   self.lastSmoothRate = 0
   self.disabledCockpitApps = false
+  -- Keep-alive to reassert cockpit UI state after external toggles (UI close, BeamMP, etc.)
+  self._uiKeepAliveTimer = 0
+  self._uiKeepAliveLogCooldown = 0
 
   self:onSettingsChanged()
 end
 
 function C:onCameraChanged()
   self.disabledCockpitApps = false
+  -- force immediate reassert next frame after any camera change
+  self._uiKeepAliveTimer = 0
+  log("I", "onCameraChanged", "Reset UI keep-alive timer")
 end
 
 function C:disableCockpitApps()
@@ -76,6 +135,7 @@ function C:disableCockpitApps()
     -- Disable cockpit gui apps
     guihooks.trigger('onCameraNameChanged', { name = 'driver' })
     self.disabledCockpitApps = true
+    log("I", "disableCockpitApps", "Sent initial onCameraNameChanged: driver")
   end
 end
 
@@ -237,6 +297,18 @@ local intermediateCamPos = vec3()
 local nRockPos, projectedRockPos = vec3(), vec3()
 
 function C:update(data)
+  -- Reassert cockpit-hide periodically while this camera is active
+  self._uiKeepAliveTimer = (self._uiKeepAliveTimer or 0) - data.dt
+  if self._uiKeepAliveTimer <= 0 then
+    guihooks.trigger('onCameraNameChanged', { name = 'driver' })
+    self._uiKeepAliveTimer = 0.5 -- every 0.5s while active
+    self._uiKeepAliveLogCooldown = (self._uiKeepAliveLogCooldown or 0) - 0.5
+    if (self._uiKeepAliveLogCooldown or 0) <= 0 then
+      log("I", "update", "Reasserted onCameraNameChanged: driver (keep-alive)")
+      self._uiKeepAliveLogCooldown = 5 -- throttle logs
+    end
+  end
+
   self:disableCockpitApps()
 
   local carPos = data.pos
