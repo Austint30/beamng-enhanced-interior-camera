@@ -67,10 +67,6 @@ function C:init()
   self:onSettingsChanged()
 end
 
-function C:onCameraChanged()
-  self.disabledCockpitApps = false
-end
-
 function C:disableCockpitApps()
   if not self.disabledCockpitApps then
     -- Disable cockpit gui apps
