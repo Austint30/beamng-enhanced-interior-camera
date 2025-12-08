@@ -20,6 +20,7 @@ end
 
 local manualzoom = require('core/cameraModes/manualzoom')
 local shake = require('core/cameraModes/speedshake')
+local profiler = require('core/enhanceddriver/profiler')
 
 -- Normalize camera UI events so enhanceddriver looks like driver to the UI.
 -- Fixes cockpit UI showing when this camera is active.
@@ -156,6 +157,7 @@ function C:onVehicleCameraConfigChanged()
 end
 
 function C:loadSettingsPreset()
+  profiler.start('LoadPreset') -- enhanceddriver: dynamic preset merge
   local defaultPresets = {
     ['Default'] = true,
     ['Intense'] = true,
@@ -202,6 +204,7 @@ function C:loadSettingsPreset()
       mergedPreset[key] = value
     end
   end
+  profiler.stop('LoadPreset')
   return mergedPreset
 end
 
@@ -298,6 +301,7 @@ local nRockPos, projectedRockPos = vec3(), vec3()
 
 function C:update(data)
   -- Reassert cockpit-hide periodically while this camera is active
+  profiler.start('UIKeepAlive') -- enhanceddriver: periodic UI reassert
   self._uiKeepAliveTimer = (self._uiKeepAliveTimer or 0) - data.dt
   if self._uiKeepAliveTimer <= 0 then
     guihooks.trigger('onCameraNameChanged', { name = 'driver' })
@@ -308,6 +312,7 @@ function C:update(data)
       self._uiKeepAliveLogCooldown = 5 -- throttle logs
     end
   end
+  profiler.stop('UIKeepAlive')
 
   self:disableCockpitApps()
 
@@ -466,7 +471,8 @@ function C:update(data)
   lookAheadAngleOffset = clamp(lookAheadAngleOffset, -1.1, 1.1) * lookAheadAngle * clamp(self.fwdSpeed / 15, 0, 1)
 
   -- Tilt the camera forward and back depending on the g-force
-  local accel = carRot:inversed() * data.vel - carRot:inversed() * data.prevVel
+  profiler.start('GForce') -- Added g-force smoothing & pitch blending (enhanceddriver)
+  local accel = carRotInverse * data.vel - carRotInverse * data.prevVel
 
   -- Smooth acceleration data
   accel.x = velSmootherX:get(accel.x, data.dt)
@@ -531,6 +537,7 @@ function C:update(data)
 
   camRot = rotateEuler(math.rad(self.camRot.x) + lookAheadAngleOffset, math.rad(self.camRot.y) + finalCamPitch, camRoll,
     camRot) -- stable hood line
+  profiler.stop('GForce')
 
   -- Pitch smoothing
   ----local roll, pitch, yaw = data.veh:getRollPitchYawAngularVelocity()
@@ -542,9 +549,12 @@ function C:update(data)
     self.saveTimeout = 1
   end
 
+  profiler.start('FOVSpeedMod') -- Added dynamic speed-based FOV modulation (enhanceddriver)
   self:updateFovSpeedMod(data)
+  profiler.stop('FOVSpeedMod')
 
   -- physics-based position
+  profiler.start('PhysicsTransform') -- Added physicsFactor blend + seat offsets persistence (enhanceddriver)
   nodePos:set(data.veh:getNodePositionXYZ(camNodeID or 0))
   carRotInverse:set(carRot)
   carRotInverse:inverse()
@@ -636,6 +646,7 @@ function C:update(data)
   data.res.pos:setRotate(carRot, intermediateCamPos)
   data.res.pos:setAdd(carPos)
   data.res.rot:set(camRot)
+  profiler.stop('PhysicsTransform')
 
   -- save fov/seat settings on timeout
   if self.saveTimeout and self.saveTimeout <= 0 then
@@ -652,11 +663,14 @@ function C:update(data)
     self.saveTimeout = nil
   end
 
+  profiler.start('SpeedShake') -- Added speed-dependent shake effect (enhanceddriver)
   self.speedshake:update(data)
+  profiler.stop('SpeedShake')
 
   -- Detect angle of drift and apply camera shake
   -- (Is it possible to do apply this with wheel slip instead?)
-  local flatVelocity = carRot:inversed() * data.vel
+  local flatVelocity = carRotInverse * data.vel
+  profiler.start('DriftShake') -- Added drift angle shake effect (enhanceddriver)
   flatVelocity.z = 0
   flatVelocity = carRot * flatVelocity
 
@@ -672,6 +686,8 @@ function C:update(data)
 
   self.driftshake:update(data, driftAngle)
   self.hasResetted = false
+  profiler.stop('DriftShake')
+  profiler.frame(data.dt)
 end
 
 function C:setRefNodes(centerNodeID, leftNodeID, backNodeID)

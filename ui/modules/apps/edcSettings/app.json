@@ -6,8 +6,8 @@
   "directive": "edcSettings",
   "domElement": "<edc-settings></edc-settings>",
   "css": { 
-    "width": "420px",
-    "height": "480px"
+    "width": "500px",
+    "height": "600px"
   },
   "preserveAspectRatio": false,
   "types": [

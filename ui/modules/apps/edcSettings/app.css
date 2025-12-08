@@ -83,6 +83,10 @@ div:has(> .edc-settings:not(.expanded)),
     min-height: 0 !important;
 }
 
+.edc-tab-container md-tab-item {
+    min-width: fit-content;
+}
+
 .edc-main-footer {
     background-color: rgba(0, 0, 0, 0.85);
     display: flex;
