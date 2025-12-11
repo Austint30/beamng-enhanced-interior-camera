@@ -392,11 +392,12 @@ function C:update(data)
   end
 
   -- convert input into angles
-  local maxAngle = 160 -- max degrees the head will be looking back
-  self.camRot.x = sideInput * maxAngle
-  if data.lookBack then self.camRot.x = rightHandDrive and -maxAngle or maxAngle end
-  self.camRot.y = vertInput * 20
-  if vertInput > 0 then self.camRot.y = self.camRot.y * 3 end
+  local maxAngleYaw = 160 -- max degrees the head will be looking back
+  self.camRot.x = sideInput * maxAngleYaw
+  if data.lookBack then self.camRot.x = rightHandDrive and -maxAngleYaw or maxAngleYaw end
+  local maxAngleTiltUp = 40   -- max degrees the head will be looking up
+  local maxAngleTiltDown = 60 -- max degrees the head will be looking down
+  self.camRot.y = vertInput * (vertInput > 0 and maxAngleTiltDown or maxAngleTiltUp)
 
   -- orientation
   rot:set(math.rad(self.camRot.x), math.rad(self.camRot.y), math.rad(self.camRot.z))
@@ -574,9 +575,9 @@ function C:update(data)
   combinedPos:setLerp(self.camPosInitialLocal, camPosLocal, self.physicsFactor)
 
   -- left/right head sticking out position
-  local minAngle = 70       -- starting angle when driver will start looking back
-  local headOut = clamp(abs(self.camRot.x) - minAngle, 0, maxAngle) /
-      (maxAngle - minAngle) -- how much the head is looking back, from 0 to 1
+  local minAngle = 70                                                                             -- starting angle when driver will start looking back
+  local headOut = clamp(abs(self.camRot.x) - minAngle, 0, maxAngleYaw) /
+  (maxAngleYaw - minAngle)                                                                        -- how much the head is looking back, from 0 to 1
   local lateralFactor = headOut
   local forwardFactor = headOut
   local verticalFactor = headOut
