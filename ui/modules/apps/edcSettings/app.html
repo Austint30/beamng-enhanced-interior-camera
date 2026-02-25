@@ -22,9 +22,26 @@ file, You can obtain one at http://beamng.com/bCDDL-1.1.txt
             <md-button class="md-accent" ng-click="onDeletePreset()" ng-hide="isDefaultPreset">Delete</md-button>
             <md-select aria-label="_" ng-model="settings.chosenPreset" flex="10" ng-change="onPresetChanged()">
                 <md-select-label style="width:100%;"></md-select-label>
-                <md-option md-no-ink ng-repeat="name in presetNames" value="{{ name }}">{{ name }}</md-option>
+                <md-select-header>
+                    <input ng-model="presetSearch" type="search" placeholder="Search presets..." ng-click="$event.stopPropagation()" class="edc-select-search" />
+                </md-select-header>
+                <md-option md-no-ink ng-repeat="name in presetNames | filter:presetSearch" value="{{ name }}">{{ name }}</md-option>
             </md-select>
         </div>
+        <p ng-show="tduOptions.length > 0">TDU</p>
+        <md-select aria-label="_" ng-show="tduOptions.length > 0" ng-model="settings.chosenTdu" ng-change="onTduChanged()">
+            <md-select-header>
+                <input ng-model="tduSearch" type="search" placeholder="Search TDU..." ng-click="$event.stopPropagation()" class="edc-select-search" />
+            </md-select-header>
+            <md-option ng-repeat="option in tduOptions | filter:tduSearch" value="{{ option.value }}">{{ option.label }}</md-option>
+        </md-select>
+        <p ng-show="planOptions.length > 0">Plan</p>
+        <md-select aria-label="_" ng-show="planOptions.length > 0" ng-model="settings.chosenPlan" ng-change="onPlanChanged()">
+            <md-select-header>
+                <input ng-model="planSearch" type="search" placeholder="Search plans..." ng-click="$event.stopPropagation()" class="edc-select-search" />
+            </md-select-header>
+            <md-option ng-repeat="option in planOptions | filter:planSearch" value="{{ option.value }}">{{ option.label }}</md-option>
+        </md-select>
     </div>
     <md-tabs class="edc-tab-container" ng-show="expanded && !loading">
         <md-tab label="G-Effects">

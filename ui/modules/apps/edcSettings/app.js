@@ -35,6 +35,11 @@ angular.module("beamng.apps").directive("edcSettings", [
         scope.presetName = "";
         scope.isDefaultPreset = false;
         scope.loading = true;
+        scope.presetSearch = "";
+        scope.tduOptions = [];
+        scope.tduSearch = "";
+        scope.planOptions = [];
+        scope.planSearch = "";
 
         var units = {
           metric: { label: "km/h", mult: 3.6 },
@@ -178,6 +183,14 @@ angular.module("beamng.apps").directive("edcSettings", [
           saveSettings();
         }
 
+        function onTduChanged() {
+          saveSettings();
+        }
+
+        function onPlanChanged() {
+          saveSettings();
+        }
+
         function saveLayout() {
           $rootScope.$broadcast('appContainer:save');
         }
@@ -186,6 +199,8 @@ angular.module("beamng.apps").directive("edcSettings", [
         scope.onSettingChanged = onSettingChanged;
         scope.onCreatePreset = onCreatePreset;
         scope.onDeletePreset = onDeletePreset;
+        scope.onTduChanged = onTduChanged;
+        scope.onPlanChanged = onPlanChanged;
         scope.beginTranslate = function (event) {
           scope.translateStart(event);
           // $document.on("mouseup", saveLayout);
