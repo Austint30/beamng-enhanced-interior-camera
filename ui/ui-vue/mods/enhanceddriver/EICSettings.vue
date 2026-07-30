@@ -43,9 +43,27 @@
       >
         <div tab-heading="G-Effects">
           <div class="settings-panel">
-            <h3>Head Motion</h3>
+            <h3>Longitudinal Motion</h3>
             <SettingSlider
-              v-for="field in gEffectFields"
+              v-for="field in longitudinalMotionFields"
+              :key="field.key"
+              v-bind="field"
+              :model-value="displayValue(field)"
+              @update:model-value="value => updateSetting(field, value)"
+            />
+
+            <h3>Vertical Motion</h3>
+            <SettingSlider
+              v-for="field in verticalMotionFields"
+              :key="field.key"
+              v-bind="field"
+              :model-value="displayValue(field)"
+              @update:model-value="value => updateSetting(field, value)"
+            />
+
+            <h3>Lateral Motion</h3>
+            <SettingSlider
+              v-for="field in lateralMotionFields"
               :key="field.key"
               v-bind="field"
               :model-value="displayValue(field)"
@@ -137,9 +155,10 @@ import {
   BngTabs,
 } from "@/common/components/base"
 import { lua } from "@/bridge"
+import { runRaw as runRawLua, serialize as serializeLua } from "@/bridge/libs/Lua.js"
 import { useSettings } from "@/services/settings"
-import { getFile, getURL } from "@/utils"
 import SettingSlider from "./SettingSlider.vue"
+import bundledDefaultSettings from "./defaultSettings.json"
 
 const DEFAULT_PRESETS = [
   "Default",
@@ -149,6 +168,15 @@ const DEFAULT_PRESETS = [
   "VR (Thrill)",
 ]
 const CUSTOM_PRESET = "Custom"
+const LATERAL_SETTING_KEYS = [
+  "gForceSideYaw",
+  "gForceSideRoll",
+  "gForceXThreshold",
+  "gForceSideLeanRoll",
+  "gForceSideLeanRollSmoothness",
+  "gForceSideLeanRollThreshold",
+]
+const LATERAL_SETTING_KEY_SET = new Set(LATERAL_SETTING_KEYS)
 const UNPAUSED_PAUSE_ROUTES = new Set([
   "pause.vehicle.parts",
   "pause.vehicle.configurationcombined",
@@ -163,7 +191,7 @@ const PRESET_ORDER = new Map(
   [...DEFAULT_PRESETS, CUSTOM_PRESET].map((name, index) => [name, index])
 )
 
-const gEffectFields = [
+const longitudinalMotionFields = [
   {
     key: "gForceAccel",
     label: "Acceleration Strength",
@@ -188,6 +216,9 @@ const gEffectFields = [
     max: 40,
     step: 0.01,
   },
+]
+
+const verticalMotionFields = [
   {
     key: "gForceZ",
     label: "Normal Force Strength",
@@ -200,6 +231,57 @@ const gEffectFields = [
     key: "gForceZThreshold",
     label: "Normal Force Threshold",
     description: "Force required before vertical G-effects begin.",
+    min: 0,
+    max: 40,
+    step: 0.01,
+  },
+]
+
+const lateralMotionFields = [
+  {
+    key: "gForceSideYaw",
+    label: "Impact Yaw Strength",
+    description: "Head yaw caused by sudden lateral forces and side impacts.",
+    min: 0,
+    max: 5,
+    step: 0.1,
+  },
+  {
+    key: "gForceSideRoll",
+    label: "Impact Roll Strength",
+    description: "Head roll caused by sudden lateral forces and side impacts.",
+    min: 0,
+    max: 5,
+    step: 0.1,
+  },
+  {
+    key: "gForceXThreshold",
+    label: "Impact Force Threshold",
+    description: "Force required before impact yaw and roll effects begin.",
+    min: 0,
+    max: 100,
+    step: 0.01,
+  },
+  {
+    key: "gForceSideLeanRoll",
+    label: "Lean-In Roll Strength",
+    description: "Sustained head roll in the direction of the lateral force.",
+    min: 0,
+    max: 5,
+    step: 0.1,
+  },
+  {
+    key: "gForceSideLeanRollSmoothness",
+    label: "Lean-In Roll Smoothness",
+    description: "How gradually the camera enters and exits the lean.",
+    min: 0,
+    max: 100,
+    step: 1,
+  },
+  {
+    key: "gForceSideLeanRollThreshold",
+    label: "Lean-In Roll Force Threshold",
+    description: "Force required before lean-in roll begins.",
     min: 0,
     max: 40,
     step: 0.01,
@@ -367,6 +449,32 @@ let defaults = null
 let saveQueue = Promise.resolve()
 let saveGeneration = 0
 let simulationPauseQueue = Promise.resolve()
+const lastDisplayedLateralValues = new Map()
+
+function lateralSnapshot(values) {
+  const snapshot = {}
+  for (const key of LATERAL_SETTING_KEYS) {
+    snapshot[key] = Object.prototype.hasOwnProperty.call(values || {}, key)
+      ? values[key]
+      : "<missing>"
+  }
+  return snapshot
+}
+
+function debugSettings(message, details = undefined) {
+  const suffix = details === undefined ? "" : ` ${JSON.stringify(details)}`
+  const line = `${message}${suffix}`
+  console.info(`[Enhanced Interior Camera settings] ${line}`)
+
+  try {
+    runRawLua(
+      `log("I", "enhanceddriver.settings.ui", ${serializeLua(line)})`,
+      false
+    )
+  } catch (error) {
+    console.warn("[Enhanced Interior Camera settings] Could not forward debug log to Lua.", error)
+  }
+}
 
 async function setSimulationPaused(paused) {
   try {
@@ -476,8 +584,15 @@ function normalizedPreset(value) {
 
 function loadActivePreset(name) {
   const resolvedName = Object.prototype.hasOwnProperty.call(presets, name) ? name : "Default"
+  const normalizedValues = normalizedPreset(presets[resolvedName])
+  debugSettings("Loading active preset", {
+    requested: name,
+    resolved: resolvedName,
+    source: lateralSnapshot(presets[resolvedName]),
+    normalized: lateralSnapshot(normalizedValues),
+  })
   chosenPreset.value = resolvedName
-  replaceReactive(activeValues, normalizedPreset(presets[resolvedName]))
+  replaceReactive(activeValues, normalizedValues)
 }
 
 function selectPreset(name) {
@@ -489,8 +604,27 @@ function selectPreset(name) {
 
 function displayValue(field) {
   const value = Number(activeValues[field.key])
-  if (!Number.isFinite(value)) return 0
-  return field.speed ? Math.round(value * speedUnit.value.multiplier) : value
+  const displayedValue = Number.isFinite(value)
+    ? field.speed
+      ? Math.round(value * speedUnit.value.multiplier)
+      : value
+    : 0
+
+  if (
+    LATERAL_SETTING_KEY_SET.has(field.key) &&
+    !Object.is(lastDisplayedLateralValues.get(field.key), displayedValue)
+  ) {
+    lastDisplayedLateralValues.set(field.key, displayedValue)
+    debugSettings("Passing lateral value to slider", {
+      key: field.key,
+      raw: Object.prototype.hasOwnProperty.call(activeValues, field.key)
+        ? activeValues[field.key]
+        : "<missing>",
+      displayed: displayedValue,
+    })
+  }
+
+  return displayedValue
 }
 
 function toStoredValue(field, value) {
@@ -500,6 +634,17 @@ function toStoredValue(field, value) {
 }
 
 function updateSetting(field, value) {
+  if (LATERAL_SETTING_KEY_SET.has(field.key)) {
+    debugSettings("Lateral slider emitted update", {
+      key: field.key,
+      previous: Object.prototype.hasOwnProperty.call(activeValues, field.key)
+        ? activeValues[field.key]
+        : "<missing>",
+      incoming: value,
+      preset: chosenPreset.value,
+    })
+  }
+
   if (chosenPreset.value !== CUSTOM_PRESET) {
     presets[CUSTOM_PRESET] = clone(activeValues)
     chosenPreset.value = CUSTOM_PRESET
@@ -562,10 +707,21 @@ function queueSave() {
   const generation = ++saveGeneration
   saveError.value = ""
   saveStatus.value = "Saving…"
+  debugSettings("Queueing settings save", {
+    generation,
+    chosenPreset: snapshot.chosenPreset,
+    presets: Object.fromEntries(
+      Object.entries(snapshot.presets).map(([name, value]) => [
+        name,
+        lateralSnapshot(value),
+      ])
+    ),
+  })
 
   saveQueue = saveQueue
     .catch(() => undefined)
-    .then(() => lua.settings.setValue("edcSettings", snapshot))
+    .then(() => gameSettings.waitForData())
+    .then(() => gameSettings.apply({ edcSettings: snapshot }))
     .then(() => {
       if (generation === saveGeneration) saveStatus.value = "Saved"
     })
@@ -579,10 +735,34 @@ function queueSave() {
 
 async function loadSettings() {
   try {
-    defaults = JSON.parse(
-      await getFile(getURL("/settings/enhanceddriver/defaultSettings.json"))
-    )
-    const stored = normalizeStoredSettings(await lua.settings.getValue("edcSettings"))
+    defaults = clone(bundledDefaultSettings)
+    if (!defaults?.presets?.Default) {
+      throw new Error("The bundled default settings are invalid")
+    }
+    debugSettings("Loaded bundled default preset catalog", {
+      chosenPreset: defaults.chosenPreset,
+      presets: Object.fromEntries(
+        Object.entries(defaults.presets).map(([name, value]) => [
+          name,
+          lateralSnapshot(value),
+        ])
+      ),
+    })
+
+    await gameSettings.waitForData()
+    const stored = normalizeStoredSettings(gameSettings.getValue("edcSettings"))
+    debugSettings("Loaded persisted edcSettings", {
+      chosenPreset: stored?.chosenPreset ?? "<missing>",
+      presets:
+        stored?.presets && typeof stored.presets === "object"
+          ? Object.fromEntries(
+              Object.entries(stored.presets).map(([name, value]) => [
+                name,
+                lateralSnapshot(value),
+              ])
+            )
+          : "<missing>",
+    })
 
     replaceReactive(presets, clone(defaults.presets))
     if (stored?.presets && typeof stored.presets === "object") {

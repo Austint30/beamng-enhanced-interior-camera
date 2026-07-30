@@ -76,7 +76,12 @@ do
 end
 
 local gForceFwdSmoother = newTemporalSmoothingNonLinear(4, 4)
+local gForceSideSmoother = newTemporalSmoothingNonLinear(4, 4)
+local gForceSideLeanSmoother = newTemporalSmoothingNonLinear(4, 4)
 local gForceUpSmoother = newTemporalSmoothingNonLinear(5, 5)
+local sideMotionDebugEnabled = true
+local sideMotionDebugInterval = 0.1
+local sideMotionDebugForceThreshold = 0.001
 
 local velSmootherX = newTemporalSmoothingNonLinear(12, 16)
 local velSmootherY = newTemporalSmoothingNonLinear(12, 16)
@@ -97,8 +102,12 @@ function C:init()
   self.manualzoom = manualzoom()
   self:onVehicleCameraConfigChanged()
   self.vehicleIsMoving = false
+  self.sideMotionDebugTimer = 0
 
   self.gForceYBase = 0.45
+  self.gForceSideYawBase = 0.3
+  self.gForceSideRollBase = 0.3
+  self.gForceSideLeanRollBase = 0.3
   self.gForceZBase = 0.8
 
   self.speedshake = shake()
@@ -108,7 +117,7 @@ function C:init()
   self.driftshake:init(vec3(0.3, 0.1, 0.1), vec3(5.0, 5.0, 5.0), true)
   self.hasResetted = false
 
-  self.defaultSettings = jsonReadFile('/settings/enhanceddriver/defaultSettings.json')
+  self.defaultSettings = jsonReadFile('/ui/ui-vue/mods/enhanceddriver/defaultSettings.json')
   self.edcSettings = {}
   self:initEnhancedDriverSettings()
 
@@ -235,9 +244,9 @@ function C:onSettingsChanged()
   self.lastSmoothRate = fovSmoothRate
 end
 
-function C:getSettingsValue(key)
+function C:getSettingsValue(key, fallback)
   if not self.edcSettings or self.edcSettings[key] == nil then
-    return 1
+    return fallback == nil and 1 or fallback
   end
   return self.edcSettings[key]
 end
@@ -471,8 +480,8 @@ function C:update(data)
   self.rockPos:setScaled((1 - data.dt * 0.1) * clamp(self.fwdSpeed / 20, 0, 1))
   lookAheadAngleOffset = clamp(lookAheadAngleOffset, -1.1, 1.1) * lookAheadAngle * clamp(self.fwdSpeed / 15, 0, 1)
 
-  -- Tilt the camera forward and back depending on the g-force
-  profiler.start('GForce') -- Added g-force smoothing & pitch blending (enhanceddriver)
+  -- Rotate the camera in response to longitudinal, lateral, and vertical g-forces.
+  profiler.start('GForce') -- Added g-force smoothing and rotation blending (enhanceddriver)
   local accel = carRotInverse * data.vel - carRotInverse * data.prevVel
 
   -- Smooth acceleration data
@@ -482,6 +491,8 @@ function C:update(data)
 
   -- log("I", "vel", tostring(carRot:inversed()*data.vel))
   local rawFwdForce = -accel.y / (data.dt * 100)
+  -- Vehicle-space +X points left, while positive camera yaw looks right.
+  local rawSideForce = accel.x / (data.dt * 100)
   local rawUpForce = -accel.z / (data.dt * 100)
 
   -- Reduce impact of braking being detected as upward acceleration
@@ -491,10 +502,15 @@ function C:update(data)
   -- Reduce shaking while idle by blending the g-force effect in at speed
   local gForceEffectFactor = clamp(data.vel:length() / 4, 0, 1)
   rawFwdForce = lerp(0, rawFwdForce, gForceEffectFactor)
+  rawSideForce = lerp(0, rawSideForce, gForceEffectFactor)
   rawUpForce = lerp(0, rawUpForce, gForceEffectFactor)
+  local rawSideForceBeforeThreshold = rawSideForce
+  local rawSideLeanForce = rawSideForce
 
-  local gForceZThreshold = self.edcSettings.gForceZThreshold / 100
-  local gForceYThreshold = self.edcSettings.gForceYThreshold / 100
+  local gForceZThreshold = self:getSettingsValue('gForceZThreshold', 0) / 100
+  local gForceYThreshold = self:getSettingsValue('gForceYThreshold', 0) / 100
+  local gForceXThreshold = self:getSettingsValue('gForceXThreshold', 0) / 100
+  local gForceSideLeanRollThreshold = self:getSettingsValue('gForceSideLeanRollThreshold', 0) / 100
 
   -- Add an activation threshold to forces ------------------------
   if rawUpForce < -gForceZThreshold then
@@ -510,16 +526,82 @@ function C:update(data)
   else
     rawFwdForce = 0
   end
+
+  if rawSideForce > gForceXThreshold then
+    rawSideForce = rawSideForce - gForceXThreshold
+  elseif rawSideForce < -gForceXThreshold then
+    rawSideForce = rawSideForce + gForceXThreshold
+  else
+    rawSideForce = 0
+  end
+
+  if rawSideLeanForce > gForceSideLeanRollThreshold then
+    rawSideLeanForce = rawSideLeanForce - gForceSideLeanRollThreshold
+  elseif rawSideLeanForce < -gForceSideLeanRollThreshold then
+    rawSideLeanForce = rawSideLeanForce + gForceSideLeanRollThreshold
+  else
+    rawSideLeanForce = 0
+  end
   -----------------------------------------------------------------
 
   local smoothedFwdForce = gForceFwdSmoother:get(rawFwdForce, data.dt)
+  local smoothedSideForce = gForceSideSmoother:get(rawSideForce, data.dt)
+  local sideLeanSmoothness = clamp(self:getSettingsValue('gForceSideLeanRollSmoothness', 75) / 100, 0, 1)
+  local sideLeanSmoothingRate = lerp(8, 0.25, smootheststep(sideLeanSmoothness))
+  local smoothedSideLeanForce = gForceSideLeanSmoother:getWithRate(
+    rawSideLeanForce,
+    data.dt,
+    sideLeanSmoothingRate
+  )
   local smoothedUpForce = gForceUpSmoother:get(rawUpForce, data.dt)
 
   if self.hasResetted then
     smoothedFwdForce = 0
+    smoothedSideForce = 0
+    smoothedSideLeanForce = 0
     smoothedUpForce = 0
   end
 
+  local sideImpactYawAngleFromForces = math.atan2(
+    smoothedSideForce * self.gForceSideYawBase * self:getSettingsValue('gForceSideYaw'),
+    1
+  )
+  local sideImpactRollAngleFromForces = math.atan2(
+    -smoothedSideForce * self.gForceSideRollBase * self:getSettingsValue('gForceSideRoll'),
+    1
+  )
+  -- Impact roll follows the inertial head yank; lean-in roll follows the applied lateral force.
+  local sideLeanRollAngleFromForces = math.atan2(
+    smoothedSideLeanForce * self.gForceSideLeanRollBase * self:getSettingsValue('gForceSideLeanRoll', 0),
+    1
+  )
+  if sideMotionDebugEnabled then
+    self.sideMotionDebugTimer = max((self.sideMotionDebugTimer or 0) - data.dt, 0)
+    if self.sideMotionDebugTimer == 0
+        and (
+          abs(rawSideForceBeforeThreshold) >= sideMotionDebugForceThreshold
+          or abs(smoothedSideForce) >= sideMotionDebugForceThreshold
+          or abs(smoothedSideLeanForce) >= sideMotionDebugForceThreshold
+        )
+    then
+      log(
+        "D",
+        "enhanceddriver.sideMotion",
+        string.format(
+          "inputForce=%.4f impactThreshold=%.4f impactForce=%.4f impactYaw=%.2fdeg impactRoll=%.2fdeg leanThreshold=%.4f leanForce=%.4f leanRoll=%.2fdeg",
+          rawSideForceBeforeThreshold,
+          gForceXThreshold,
+          smoothedSideForce,
+          math.deg(sideImpactYawAngleFromForces),
+          math.deg(sideImpactRollAngleFromForces),
+          gForceSideLeanRollThreshold,
+          smoothedSideLeanForce,
+          math.deg(sideLeanRollAngleFromForces)
+        )
+      )
+      self.sideMotionDebugTimer = sideMotionDebugInterval
+    end
+  end
   local scaledUpForce = smoothedUpForce * self.gForceZBase * self:getSettingsValue('gForceZ')
   local scaledFwdForce = 0
   if smoothedFwdForce >= 0 then
@@ -536,8 +618,12 @@ function C:update(data)
     self.edcSettings.lockPitchToHorizon
   )
 
-  camRot = rotateEuler(math.rad(self.camRot.x) + lookAheadAngleOffset, math.rad(self.camRot.y) + finalCamPitch, camRoll,
-    camRot) -- stable hood line
+  camRot = rotateEuler(
+    math.rad(self.camRot.x) + lookAheadAngleOffset + sideImpactYawAngleFromForces,
+    math.rad(self.camRot.y) + finalCamPitch,
+    camRoll + sideImpactRollAngleFromForces + sideLeanRollAngleFromForces,
+    camRot
+  ) -- stable hood line
   profiler.stop('GForce')
 
   -- Pitch smoothing
@@ -575,9 +661,9 @@ function C:update(data)
   combinedPos:setLerp(self.camPosInitialLocal, camPosLocal, self.physicsFactor)
 
   -- left/right head sticking out position
-  local minAngle = 70                                                                             -- starting angle when driver will start looking back
+  local minAngle = 70      -- starting angle when driver will start looking back
   local headOut = clamp(abs(self.camRot.x) - minAngle, 0, maxAngleYaw) /
-  (maxAngleYaw - minAngle)                                                                        -- how much the head is looking back, from 0 to 1
+      (maxAngleYaw - minAngle) -- how much the head is looking back, from 0 to 1
   local lateralFactor = headOut
   local forwardFactor = headOut
   local verticalFactor = headOut
