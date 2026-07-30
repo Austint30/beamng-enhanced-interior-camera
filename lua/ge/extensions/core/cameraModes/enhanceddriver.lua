@@ -110,7 +110,7 @@ function C:init()
   self.driftshake:init(vec3(0.3, 0.1, 0.1), vec3(5.0, 5.0, 5.0), true)
   self.hasResetted = false
 
-  self.defaultSettings = jsonReadFile('/ui/ui-vue/mods/enhanceddriver/defaultSettings.json')
+  self.defaultSettings = jsonReadFile('/lua/ge/extensions/core/cameraModes/enhanceddriverDefaults.json')
   self.edcSettings = {}
   self:initEnhancedDriverSettings()
 

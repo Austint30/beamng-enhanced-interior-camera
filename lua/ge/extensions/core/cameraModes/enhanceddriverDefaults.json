@@ -46,7 +46,7 @@
       "steeringLookAheadSmoothness": 50,
       "gForceZThreshold": 0,
       "gForceYThreshold": 0,
-      "speedShakeAmp":5.5,
+      "speedShakeAmp": 5.5,
       "speedShakeDetail":3,
       "speedShakeFreq":0.2,
       "speedShakeMaxSpeed":70.79733922233,

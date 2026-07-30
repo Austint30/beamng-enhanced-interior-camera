@@ -177,10 +177,11 @@ import {
   icons,
 } from "@/common/components/base"
 import { lua } from "@/bridge"
+import { runRaw } from "@/bridge/libs/Lua.js"
 import { useSettings } from "@/services/settings"
 import SettingSlider from "./SettingSlider.vue"
-import bundledDefaultSettings from "./defaultSettings.json"
 
+const DEFAULT_SETTINGS_PATH = "/lua/ge/extensions/core/cameraModes/enhanceddriverDefaults.json"
 const DEFAULT_PRESETS = [
   "Default",
   "Lookahead",
@@ -697,9 +698,9 @@ function queueSave() {
 
 async function loadSettings() {
   try {
-    defaults = clone(bundledDefaultSettings)
+    defaults = clone(await runRaw(`jsonReadFile('${DEFAULT_SETTINGS_PATH}')`))
     if (!defaults?.presets?.Default) {
-      throw new Error("The bundled default settings are invalid")
+      throw new Error("The Enhanced Interior Camera default settings are invalid")
     }
 
     await gameSettings.waitForData()
