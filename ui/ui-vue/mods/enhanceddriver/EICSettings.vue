@@ -111,6 +111,26 @@
 
         <div tab-heading="Other">
           <div class="settings-panel">
+            <h3>Steering Look-Ahead</h3>
+            <div class="settings-notice">
+              <BngIcon class="settings-notice-icon" :type="icons.warning" />
+              <div>
+                <strong>BeamNG camera setting required</strong>
+                <span>
+                  Set Options &gt; Camera &gt; Camera - Driver &gt; Look-Ahead Angle
+                  to 0%. Otherwise, BeamNG's built-in look-ahead can cause conflicting
+                  camera movements.
+                </span>
+              </div>
+            </div>
+            <SettingSlider
+              v-for="field in steeringLookAheadFields"
+              :key="field.key"
+              v-bind="field"
+              :model-value="displayValue(field)"
+              @update:model-value="value => updateSetting(field, value)"
+            />
+
             <h3>Pitch and Roll</h3>
             <SettingSlider
               v-for="field in otherFields"
@@ -151,32 +171,25 @@ import {
   ACCENTS,
   BngButton,
   BngDropdown,
+  BngIcon,
   BngInput,
   BngTabs,
+  icons,
 } from "@/common/components/base"
 import { lua } from "@/bridge"
-import { runRaw as runRawLua, serialize as serializeLua } from "@/bridge/libs/Lua.js"
 import { useSettings } from "@/services/settings"
 import SettingSlider from "./SettingSlider.vue"
 import bundledDefaultSettings from "./defaultSettings.json"
 
 const DEFAULT_PRESETS = [
   "Default",
+  "Lookahead",
   "Intense",
   "Smooth",
   "VR (Comfort)",
   "VR (Thrill)",
 ]
 const CUSTOM_PRESET = "Custom"
-const LATERAL_SETTING_KEYS = [
-  "gForceSideYaw",
-  "gForceSideRoll",
-  "gForceXThreshold",
-  "gForceSideLeanRoll",
-  "gForceSideLeanRollSmoothness",
-  "gForceSideLeanRollThreshold",
-]
-const LATERAL_SETTING_KEY_SET = new Set(LATERAL_SETTING_KEYS)
 const UNPAUSED_PAUSE_ROUTES = new Set([
   "pause.vehicle.parts",
   "pause.vehicle.configurationcombined",
@@ -398,6 +411,27 @@ const fovFields = [
   },
 ]
 
+const steeringLookAheadFields = [
+  {
+    key: "steeringLookAheadAngle",
+    label: "Steering Tracking Angle",
+    description: "Maximum camera yaw applied at full steering input.",
+    min: 0,
+    max: 60,
+    step: 1,
+    unit: "°",
+  },
+  {
+    key: "steeringLookAheadSmoothness",
+    label: "Steering Tracking Smoothness",
+    description: "How gradually the camera follows changes in steering input.",
+    min: 0,
+    max: 100,
+    step: 1,
+    unit: "%",
+  },
+]
+
 const otherFields = [
   {
     key: "pitchSmoothing",
@@ -449,32 +483,6 @@ let defaults = null
 let saveQueue = Promise.resolve()
 let saveGeneration = 0
 let simulationPauseQueue = Promise.resolve()
-const lastDisplayedLateralValues = new Map()
-
-function lateralSnapshot(values) {
-  const snapshot = {}
-  for (const key of LATERAL_SETTING_KEYS) {
-    snapshot[key] = Object.prototype.hasOwnProperty.call(values || {}, key)
-      ? values[key]
-      : "<missing>"
-  }
-  return snapshot
-}
-
-function debugSettings(message, details = undefined) {
-  const suffix = details === undefined ? "" : ` ${JSON.stringify(details)}`
-  const line = `${message}${suffix}`
-  console.info(`[Enhanced Interior Camera settings] ${line}`)
-
-  try {
-    runRawLua(
-      `log("I", "enhanceddriver.settings.ui", ${serializeLua(line)})`,
-      false
-    )
-  } catch (error) {
-    console.warn("[Enhanced Interior Camera settings] Could not forward debug log to Lua.", error)
-  }
-}
 
 async function setSimulationPaused(paused) {
   try {
@@ -585,12 +593,6 @@ function normalizedPreset(value) {
 function loadActivePreset(name) {
   const resolvedName = Object.prototype.hasOwnProperty.call(presets, name) ? name : "Default"
   const normalizedValues = normalizedPreset(presets[resolvedName])
-  debugSettings("Loading active preset", {
-    requested: name,
-    resolved: resolvedName,
-    source: lateralSnapshot(presets[resolvedName]),
-    normalized: lateralSnapshot(normalizedValues),
-  })
   chosenPreset.value = resolvedName
   replaceReactive(activeValues, normalizedValues)
 }
@@ -604,27 +606,8 @@ function selectPreset(name) {
 
 function displayValue(field) {
   const value = Number(activeValues[field.key])
-  const displayedValue = Number.isFinite(value)
-    ? field.speed
-      ? Math.round(value * speedUnit.value.multiplier)
-      : value
-    : 0
-
-  if (
-    LATERAL_SETTING_KEY_SET.has(field.key) &&
-    !Object.is(lastDisplayedLateralValues.get(field.key), displayedValue)
-  ) {
-    lastDisplayedLateralValues.set(field.key, displayedValue)
-    debugSettings("Passing lateral value to slider", {
-      key: field.key,
-      raw: Object.prototype.hasOwnProperty.call(activeValues, field.key)
-        ? activeValues[field.key]
-        : "<missing>",
-      displayed: displayedValue,
-    })
-  }
-
-  return displayedValue
+  if (!Number.isFinite(value)) return 0
+  return field.speed ? Math.round(value * speedUnit.value.multiplier) : value
 }
 
 function toStoredValue(field, value) {
@@ -634,17 +617,6 @@ function toStoredValue(field, value) {
 }
 
 function updateSetting(field, value) {
-  if (LATERAL_SETTING_KEY_SET.has(field.key)) {
-    debugSettings("Lateral slider emitted update", {
-      key: field.key,
-      previous: Object.prototype.hasOwnProperty.call(activeValues, field.key)
-        ? activeValues[field.key]
-        : "<missing>",
-      incoming: value,
-      preset: chosenPreset.value,
-    })
-  }
-
   if (chosenPreset.value !== CUSTOM_PRESET) {
     presets[CUSTOM_PRESET] = clone(activeValues)
     chosenPreset.value = CUSTOM_PRESET
@@ -707,16 +679,6 @@ function queueSave() {
   const generation = ++saveGeneration
   saveError.value = ""
   saveStatus.value = "Saving…"
-  debugSettings("Queueing settings save", {
-    generation,
-    chosenPreset: snapshot.chosenPreset,
-    presets: Object.fromEntries(
-      Object.entries(snapshot.presets).map(([name, value]) => [
-        name,
-        lateralSnapshot(value),
-      ])
-    ),
-  })
 
   saveQueue = saveQueue
     .catch(() => undefined)
@@ -739,30 +701,9 @@ async function loadSettings() {
     if (!defaults?.presets?.Default) {
       throw new Error("The bundled default settings are invalid")
     }
-    debugSettings("Loaded bundled default preset catalog", {
-      chosenPreset: defaults.chosenPreset,
-      presets: Object.fromEntries(
-        Object.entries(defaults.presets).map(([name, value]) => [
-          name,
-          lateralSnapshot(value),
-        ])
-      ),
-    })
 
     await gameSettings.waitForData()
     const stored = normalizeStoredSettings(gameSettings.getValue("edcSettings"))
-    debugSettings("Loaded persisted edcSettings", {
-      chosenPreset: stored?.chosenPreset ?? "<missing>",
-      presets:
-        stored?.presets && typeof stored.presets === "object"
-          ? Object.fromEntries(
-              Object.entries(stored.presets).map(([name, value]) => [
-                name,
-                lateralSnapshot(value),
-              ])
-            )
-          : "<missing>",
-    })
 
     replaceReactive(presets, clone(defaults.presets))
     if (stored?.presets && typeof stored.presets === "object") {
@@ -884,6 +825,38 @@ void loadSettings()
     border-bottom: 0.1rem solid rgba(var(--bng-orange-500-rgb), 0.75);
     color: var(--bng-off-white);
     font-size: 1.05rem;
+  }
+}
+
+.settings-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--bng-orange-500);
+  border-radius: var(--bng-corners-1);
+  background: rgba(var(--bng-orange-500-rgb), 0.12);
+  line-height: 1.3;
+
+  > .settings-notice-icon {
+    flex: 0 0 auto;
+    color: var(--bng-orange-500);
+    font-size: 1.4rem;
+  }
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  strong {
+    font-weight: 700;
+  }
+
+  span {
+    color: rgba(var(--bng-off-white-rgb), 0.82);
+    font-size: 0.86rem;
   }
 }
 

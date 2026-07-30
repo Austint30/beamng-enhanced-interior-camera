@@ -33,20 +33,17 @@ do
       if evt == 'onCameraNameChanged' then
         if type(payload) ~= 'table' then payload = { name = payload } end
         if payload.name == 'enhanceddriver' then
-          log("I", "guihooks.trigger", "Remapping onCameraNameChanged: enhanceddriver -> driver")
           payload.name = 'driver'
         end
         -- Options > Cameras and other UI consumers
       elseif evt == 'CameraConfigChanged' and type(payload) == 'table' then
         if payload.focusedCamName == 'enhanceddriver' then
-          log("I", "guihooks.trigger", "Remapping CameraConfigChanged.focusedCamName -> driver")
           payload.focusedCamName = 'driver'
         end
       end
       return orig(evt, payload, ...)
     end
     gh._edc_wrapped = true
-    log("I", "guihooks.trigger", "Installed enhanceddriver UI normalizer")
   else
     log("E", "guihooks.trigger", "Unable to install UI normalizer (guihooks missing or already wrapped)")
   end
@@ -61,7 +58,6 @@ do
       if evt == 'onCameraModeChanged' then
         local camName = select(1, ...)
         if camName == 'enhanceddriver' then
-          log("I", "extensions.hook", "Remapping onCameraModeChanged: enhanceddriver -> driver")
           -- replace first arg and forward remaining args intact
           return origHook(evt, 'driver', select(2, ...))
         end
@@ -69,7 +65,6 @@ do
       return origHook(evt, ...)
     end
     ex._edc_cam_wrap = true
-    log("I", "extensions.hook", "Installed enhanceddriver onCameraModeChanged normalizer")
   else
     log("E", "extensions.hook", "Unable to install normalizer (extensions.hook missing or already wrapped)")
   end
@@ -79,9 +74,6 @@ local gForceFwdSmoother = newTemporalSmoothingNonLinear(4, 4)
 local gForceSideSmoother = newTemporalSmoothingNonLinear(4, 4)
 local gForceSideLeanSmoother = newTemporalSmoothingNonLinear(4, 4)
 local gForceUpSmoother = newTemporalSmoothingNonLinear(5, 5)
-local sideMotionDebugEnabled = true
-local sideMotionDebugInterval = 0.1
-local sideMotionDebugForceThreshold = 0.001
 
 local velSmootherX = newTemporalSmoothingNonLinear(12, 16)
 local velSmootherY = newTemporalSmoothingNonLinear(12, 16)
@@ -102,7 +94,8 @@ function C:init()
   self.manualzoom = manualzoom()
   self:onVehicleCameraConfigChanged()
   self.vehicleIsMoving = false
-  self.sideMotionDebugTimer = 0
+  self.steeringLookAheadSmoother = newTemporalSmoothingNonLinear(8, 8, 0)
+  self.steeringLookAheadVehicleId = nil
 
   self.gForceYBase = 0.45
   self.gForceSideYawBase = 0.3
@@ -128,7 +121,6 @@ function C:init()
   self.disabledCockpitApps = false
   -- Keep-alive to reassert cockpit UI state after external toggles (UI close, BeamMP, etc.)
   self._uiKeepAliveTimer = 0
-  self._uiKeepAliveLogCooldown = 0
 
   self:onSettingsChanged()
 end
@@ -137,7 +129,6 @@ function C:onCameraChanged()
   self.disabledCockpitApps = false
   -- force immediate reassert next frame after any camera change
   self._uiKeepAliveTimer = 0
-  log("I", "onCameraChanged", "Reset UI keep-alive timer")
 end
 
 function C:disableCockpitApps()
@@ -145,7 +136,6 @@ function C:disableCockpitApps()
     -- Disable cockpit gui apps
     guihooks.trigger('onCameraNameChanged', { name = 'driver' })
     self.disabledCockpitApps = true
-    log("I", "disableCockpitApps", "Sent initial onCameraNameChanged: driver")
   end
 end
 
@@ -159,6 +149,10 @@ function C:onVehicleCameraConfigChanged()
   --trigger reloading of new vehicle from settings
   self.seatPosition = nil
   self.seatRotation = 0
+  self.steeringLookAheadVehicleId = nil
+  if self.steeringLookAheadSmoother then
+    self.steeringLookAheadSmoother:reset()
+  end
   --trigger gathering of new initial node position
   self.camPosInitialLocal = nil
   self.marginX = nil
@@ -169,6 +163,7 @@ function C:loadSettingsPreset()
   profiler.start('LoadPreset') -- enhanceddriver: dynamic preset merge
   local defaultPresets = {
     ['Default'] = true,
+    ['Lookahead'] = true,
     ['Intense'] = true,
     ['Smooth'] = true,
     ['VR (Comfort)'] = true,
@@ -270,6 +265,7 @@ function C:reset()
   self.relativeYaw = 0
   self.relativePitch = 0
   self.rockPos = vec3()
+  self.steeringLookAheadSmoother:reset()
 end
 
 function C:updateFovSpeedMod(data)
@@ -315,11 +311,6 @@ function C:update(data)
   if self._uiKeepAliveTimer <= 0 then
     guihooks.trigger('onCameraNameChanged', { name = 'driver' })
     self._uiKeepAliveTimer = 0.5 -- every 0.5s while active
-    self._uiKeepAliveLogCooldown = (self._uiKeepAliveLogCooldown or 0) - 0.5
-    if (self._uiKeepAliveLogCooldown or 0) <= 0 then
-      log("I", "update", "Reasserted onCameraNameChanged: driver (keep-alive)")
-      self._uiKeepAliveLogCooldown = 5 -- throttle logs
-    end
   end
   profiler.stop('UIKeepAlive')
 
@@ -480,6 +471,36 @@ function C:update(data)
   self.rockPos:setScaled((1 - data.dt * 0.1) * clamp(self.fwdSpeed / 20, 0, 1))
   lookAheadAngleOffset = clamp(lookAheadAngleOffset, -1.1, 1.1) * lookAheadAngle * clamp(self.fwdSpeed / 15, 0, 1)
 
+  -- Steering look-ahead follows the supported, normalized vehicle steering input.
+  -- Keep it separate from BeamNG's velocity-based look-ahead so users can tune it independently.
+  local steeringLookAheadAngleOffset = 0
+  local steeringLookAheadAngle = self:getSettingsValue('steeringLookAheadAngle', 0)
+  if not data.openxrSessionRunning and steeringLookAheadAngle ~= 0 then
+    local vehicleId = data.veh:getId()
+    if self.steeringLookAheadVehicleId ~= vehicleId then
+      core_vehicleBridge.registerValueChangeNotification(data.veh, 'steering_input')
+      self.steeringLookAheadVehicleId = vehicleId
+      self.steeringLookAheadSmoother:reset()
+    end
+
+    local steeringInput = core_vehicleBridge.getCachedVehicleData(vehicleId, 'steering_input') or 0
+    steeringInput = clamp(tonumber(steeringInput) or 0, -1, 1)
+    local steeringLookAheadSmoothness = clamp(
+      self:getSettingsValue('steeringLookAheadSmoothness', 50) / 100,
+      0,
+      1
+    )
+    local steeringLookAheadRate = lerp(20, 0.5, smootheststep(steeringLookAheadSmoothness))
+    local smoothedSteeringInput = self.steeringLookAheadSmoother:getWithRate(
+      steeringInput,
+      data.dt,
+      steeringLookAheadRate
+    )
+    steeringLookAheadAngleOffset = math.rad(smoothedSteeringInput * steeringLookAheadAngle)
+  else
+    self.steeringLookAheadSmoother:set(0)
+  end
+
   -- Rotate the camera in response to longitudinal, lateral, and vertical g-forces.
   profiler.start('GForce') -- Added g-force smoothing and rotation blending (enhanceddriver)
   local accel = carRotInverse * data.vel - carRotInverse * data.prevVel
@@ -489,7 +510,6 @@ function C:update(data)
   accel.y = velSmootherY:get(accel.y, data.dt)
   accel.z = velSmootherZ:get(accel.z, data.dt)
 
-  -- log("I", "vel", tostring(carRot:inversed()*data.vel))
   local rawFwdForce = -accel.y / (data.dt * 100)
   -- Vehicle-space +X points left, while positive camera yaw looks right.
   local rawSideForce = accel.x / (data.dt * 100)
@@ -497,14 +517,12 @@ function C:update(data)
 
   -- Reduce impact of braking being detected as upward acceleration
   rawUpForce = lerp(0, rawUpForce, clamp(rawUpForce / -0.3, 0, 1))
-  -- log("I", "", "Accelerating up power   "..tostring(rawUpForce))
 
   -- Reduce shaking while idle by blending the g-force effect in at speed
   local gForceEffectFactor = clamp(data.vel:length() / 4, 0, 1)
   rawFwdForce = lerp(0, rawFwdForce, gForceEffectFactor)
   rawSideForce = lerp(0, rawSideForce, gForceEffectFactor)
   rawUpForce = lerp(0, rawUpForce, gForceEffectFactor)
-  local rawSideForceBeforeThreshold = rawSideForce
   local rawSideLeanForce = rawSideForce
 
   local gForceZThreshold = self:getSettingsValue('gForceZThreshold', 0) / 100
@@ -575,33 +593,6 @@ function C:update(data)
     smoothedSideLeanForce * self.gForceSideLeanRollBase * self:getSettingsValue('gForceSideLeanRoll', 0),
     1
   )
-  if sideMotionDebugEnabled then
-    self.sideMotionDebugTimer = max((self.sideMotionDebugTimer or 0) - data.dt, 0)
-    if self.sideMotionDebugTimer == 0
-        and (
-          abs(rawSideForceBeforeThreshold) >= sideMotionDebugForceThreshold
-          or abs(smoothedSideForce) >= sideMotionDebugForceThreshold
-          or abs(smoothedSideLeanForce) >= sideMotionDebugForceThreshold
-        )
-    then
-      log(
-        "D",
-        "enhanceddriver.sideMotion",
-        string.format(
-          "inputForce=%.4f impactThreshold=%.4f impactForce=%.4f impactYaw=%.2fdeg impactRoll=%.2fdeg leanThreshold=%.4f leanForce=%.4f leanRoll=%.2fdeg",
-          rawSideForceBeforeThreshold,
-          gForceXThreshold,
-          smoothedSideForce,
-          math.deg(sideImpactYawAngleFromForces),
-          math.deg(sideImpactRollAngleFromForces),
-          gForceSideLeanRollThreshold,
-          smoothedSideLeanForce,
-          math.deg(sideLeanRollAngleFromForces)
-        )
-      )
-      self.sideMotionDebugTimer = sideMotionDebugInterval
-    end
-  end
   local scaledUpForce = smoothedUpForce * self.gForceZBase * self:getSettingsValue('gForceZ')
   local scaledFwdForce = 0
   if smoothedFwdForce >= 0 then
@@ -619,7 +610,7 @@ function C:update(data)
   )
 
   camRot = rotateEuler(
-    math.rad(self.camRot.x) + lookAheadAngleOffset + sideImpactYawAngleFromForces,
+    math.rad(self.camRot.x) + lookAheadAngleOffset + steeringLookAheadAngleOffset + sideImpactYawAngleFromForces,
     math.rad(self.camRot.y) + finalCamPitch,
     camRoll + sideImpactRollAngleFromForces + sideLeanRollAngleFromForces,
     camRot
