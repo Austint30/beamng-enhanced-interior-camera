@@ -345,6 +345,7 @@ local currentCarPos, prevCarPos = vec3(), vec3()
 local rot = vec3()
 local left, ref, back = vec3(), vec3(), vec3()
 local carLeft, carFwd, carUp, carRot, carRotInverse = vec3(), vec3(), vec3(), quat(), quat()
+local forcePitchAxis, forcePitchRot = vec3(), quat()
 local nodePos = vec3()
 local camUp, camRot, attachedCamRot = vec3(), quat(), quat()
 local normalCamFwd, normalCamUp = vec3(), vec3()
@@ -480,6 +481,9 @@ function C:update(data)
   carLeft:setSub2(left, ref); carLeft:normalize()
   carFwd:setSub2(back, ref); carFwd:normalize()
   carUp:setCross(carLeft, carFwd); carUp:normalize()
+  -- The camera looks along -carFwd, so its vehicle-relative pitch axis is -carLeft.
+  -- Capture it before camera orientation smoothing modifies carLeft.
+  forcePitchAxis:set(-push3(carLeft))
   local detectedTumbleFactor = self.tumbleDetection:getGForceFactor(carUp, data.dt)
   local gForceTumbleFactor = lerp(1, detectedTumbleFactor, cameraEffectFactor)
 
@@ -654,15 +658,11 @@ function C:update(data)
 
   local pitchAngleFromForces = -math.atan2(scaledUpForce + scaledFwdForce, 1) * gForceTumbleFactor
 
-  local finalCamPitch = lerp(
-    pitchAngleFromForces,
-    camPitch + pitchAngleFromForces,
-    pitchHorizonLock
-  )
+  local horizonPitchOffset = lerp(0, camPitch, pitchHorizonLock)
 
   local cameraYawOffset = math.rad(self.camRot.x) + lookAheadAngleOffset +
     steeringLookAheadAngleOffset + sideImpactYawAngleFromForces
-  local cameraPitchOffset = math.rad(self.camRot.y) + finalCamPitch
+  local cameraPitchOffset = math.rad(self.camRot.y) + horizonPitchOffset
   local cameraRollOffset = camRoll + sideImpactRollAngleFromForces + sideLeanRollAngleFromForces
 
   camRot = rotateEuler(
@@ -671,6 +671,11 @@ function C:update(data)
     cameraRollOffset,
     camRot
   ) -- stable hood line
+
+  -- Normal-force and acceleration/deceleration pitch belongs to the vehicle frame,
+  -- not the potentially horizon-locked camera frame.
+  forcePitchRot:setFromAxisAngle(forcePitchAxis, pitchAngleFromForces)
+  camRot:setMul2(camRot, forcePitchRot)
 
   if attachToCarWhileTumbling and gForceTumbleFactor < 1 then
     -- Blend the forward and up axes separately instead of switching algorithms or
@@ -682,10 +687,11 @@ function C:update(data)
     attachedCamRot:setFromDir(-push3(carFwd), carUp)
     rotateEuler(
       cameraYawOffset,
-      math.rad(self.camRot.y) + pitchAngleFromForces,
+      math.rad(self.camRot.y),
       sideImpactRollAngleFromForces + sideLeanRollAngleFromForces,
       attachedCamRot
     )
+    attachedCamRot:setMul2(attachedCamRot, forcePitchRot)
     attachedCamFwd:setRotate(attachedCamRot, vecY)
     attachedCamUp:setRotate(attachedCamRot, vecZ)
 
