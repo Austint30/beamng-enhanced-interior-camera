@@ -81,6 +81,9 @@ local velSmootherX = newTemporalSmoothingNonLinear(12, 16)
 local velSmootherY = newTemporalSmoothingNonLinear(12, 16)
 local velSmootherZ = newTemporalSmoothingNonLinear(12, 16)
 
+local cameraEffectSuppressionDuration = 0.5
+local cameraEffectRecoveryRate = 8
+
 local C = {}
 C.__index = C
 
@@ -96,6 +99,12 @@ function C:init()
   self.manualzoom = manualzoom()
   self.steeringLookAhead = steeringLookAhead()
   self.tumbleDetection = tumbleDetection()
+  self.cameraEffectSuppressionTimer = cameraEffectSuppressionDuration
+  self.cameraEffectRecoverySmoother = newTemporalSmoothingNonLinear(
+    cameraEffectRecoveryRate,
+    cameraEffectRecoveryRate,
+    0
+  )
   self:onVehicleCameraConfigChanged()
   self.vehicleIsMoving = false
 
@@ -147,12 +156,44 @@ function C:initEnhancedDriverSettings()
   end
 end
 
+function C:resetTransientCameraEffects()
+  self.rockPos:set(0, 0, 0)
+  self.fwdSpeed = 0
+  self.steeringLookAhead:reset()
+  self.tumbleDetection:reset()
+  self.cameraEffectRecoverySmoother:set(0)
+
+  gForceFwdSmoother:reset()
+  gForceSideSmoother:reset()
+  gForceSideLeanSmoother:reset()
+  gForceUpSmoother:reset()
+  velSmootherX:reset()
+  velSmootherY:reset()
+  velSmootherZ:reset()
+
+  if self.fovSmoother then self.fovSmoother:set(0) end
+end
+
+function C:suppressCameraEffects()
+  self.cameraEffectSuppressionTimer = cameraEffectSuppressionDuration
+  self:resetTransientCameraEffects()
+end
+
+function C:updateCameraEffectFactor(dt)
+  if self.cameraEffectSuppressionTimer > 0 then
+    self.cameraEffectSuppressionTimer = max(self.cameraEffectSuppressionTimer - dt, 0)
+    return 0
+  end
+
+  return self.cameraEffectRecoverySmoother:get(1, dt)
+end
+
 function C:onVehicleCameraConfigChanged()
   --trigger reloading of new vehicle from settings
   self.seatPosition = nil
   self.seatRotation = 0
   self.steeringLookAhead:invalidateRegistration()
-  self.tumbleDetection:reset()
+  self:suppressCameraEffects()
   --trigger gathering of new initial node position
   self.camPosInitialLocal = nil
   self.marginX = nil
@@ -266,11 +307,16 @@ function C:reset()
   self.relativePitch = 0
   self.rockPos = vec3()
   self.steeringLookAhead:invalidateRegistration()
-  self.tumbleDetection:reset()
+  self:suppressCameraEffects()
 end
 
-function C:updateFovSpeedMod(data)
+function C:updateFovSpeedMod(data, cameraEffectFactor)
   self.currFov = data.res.fov
+  if cameraEffectFactor <= 0 then
+    data.res.fov = self.manualzoom.fov
+    return
+  end
+
   local speed = data.vel:length()
 
   -- if speed < self.minSpeedFovMod then
@@ -285,7 +331,7 @@ function C:updateFovSpeedMod(data)
 
   local smoothedFovScale = self.fovSmoother:get(rawFovScale, data.dt)
 
-  local addedFov = smoothedFovScale * self.edcSettings.fovAddDegrees
+  local addedFov = smoothedFovScale * self.edcSettings.fovAddDegrees * cameraEffectFactor
 
   local newFov = self.manualzoom.fov + addedFov
   data.res.fov = newFov
@@ -309,6 +355,10 @@ local intermediateCamPos = vec3()
 local nRockPos, projectedRockPos = vec3(), vec3()
 
 function C:update(data)
+  -- BeamNG marks vehicle rewinds and teleports in the supported camera data.
+  -- Vehicle respawns/reloads also reach suppressCameraEffects through reset().
+  if data.teleported then self:suppressCameraEffects() end
+
   -- Reassert cockpit-hide periodically while this camera is active
   profiler.start('UIKeepAlive') -- enhanceddriver: periodic UI reassert
   self._uiKeepAliveTimer = (self._uiKeepAliveTimer or 0) - data.dt
@@ -328,6 +378,7 @@ function C:update(data)
     data.res.rot:setFromDir(vecY, vecZ)
     return
   end
+  local cameraEffectFactor = self:updateCameraEffectFactor(data.dt)
   local camNodeID, rightHandDrive = core_camera.getDriverData(data.veh)
 
   -- read seat adjustment settings
@@ -429,7 +480,8 @@ function C:update(data)
   carLeft:setSub2(left, ref); carLeft:normalize()
   carFwd:setSub2(back, ref); carFwd:normalize()
   carUp:setCross(carLeft, carFwd); carUp:normalize()
-  local gForceTumbleFactor = self.tumbleDetection:getGForceFactor(carUp, data.dt)
+  local detectedTumbleFactor = self.tumbleDetection:getGForceFactor(carUp, data.dt)
+  local gForceTumbleFactor = lerp(1, detectedTumbleFactor, cameraEffectFactor)
 
   local attachToCarWhileTumbling = self:getSettingsValue('disableHorizonLockWhileTumbling', false)
   local pitchHorizonLock = self:getSettingsValue('lockPitchToHorizon', 0)
@@ -451,6 +503,7 @@ function C:update(data)
   -- Full tumble attachment raises the follow factor to 1, removing orientation lag.
   local pitchSmoothingFactor = (1 - self:getSettingsValue('pitchSmoothing', 0)) * data.dt * 20
   local pitchFollowFactor = lerp(1, pitchSmoothingFactor, gForceTumbleFactor)
+  pitchFollowFactor = lerp(1, pitchFollowFactor, cameraEffectFactor)
   local lerpedCarFwd = lerp(self.lastCarFwd, carFwd, pitchFollowFactor)
   carFwd.z = lerpedCarFwd.z
   self.lastCarFwd:set(carFwd)
@@ -458,6 +511,7 @@ function C:update(data)
   -- Smooth car left direction
   local rollSmoothingFactor = (1 - self:getSettingsValue('rollSmoothing', 0)) * data.dt * 20
   local rollFollowFactor = lerp(1, rollSmoothingFactor, gForceTumbleFactor)
+  rollFollowFactor = lerp(1, rollFollowFactor, cameraEffectFactor)
   local lerpedCarLeft = lerp(self.lastCarLeft, carLeft, rollFollowFactor)
   carLeft.z = lerpedCarLeft.z
   self.lastCarLeft:set(carLeft)
@@ -484,6 +538,7 @@ function C:update(data)
     nRockPos.x * carFwd.x + nRockPos.y * carFwd.y)
   self.rockPos:setScaled((1 - data.dt * 0.1) * clamp(self.fwdSpeed / 20, 0, 1))
   lookAheadAngleOffset = clamp(lookAheadAngleOffset, -1.1, 1.1) * lookAheadAngle * clamp(self.fwdSpeed / 15, 0, 1)
+  lookAheadAngleOffset = lookAheadAngleOffset * cameraEffectFactor
 
   -- Steering look-ahead follows the supported, normalized vehicle steering input.
   -- Keep it separate from BeamNG's velocity-based look-ahead so users can tune it independently.
@@ -492,20 +547,24 @@ function C:update(data)
     self:getSettingsValue('steeringLookAheadAngle', 0),
     self:getSettingsValue('steeringLookAheadSmoothness', 50)
   )
+  steeringLookAheadAngleOffset = steeringLookAheadAngleOffset * cameraEffectFactor
 
   -- Rotate the camera in response to longitudinal, lateral, and vertical g-forces.
   profiler.start('GForce') -- Added g-force smoothing and rotation blending (enhanceddriver)
-  local accel = carRotInverse * data.vel - carRotInverse * data.prevVel
+  local rawFwdForce, rawSideForce, rawUpForce = 0, 0, 0
+  if cameraEffectFactor > 0 and data.dt > 1e-6 then
+    local accel = carRotInverse * data.vel - carRotInverse * data.prevVel
 
-  -- Smooth acceleration data
-  accel.x = velSmootherX:get(accel.x, data.dt)
-  accel.y = velSmootherY:get(accel.y, data.dt)
-  accel.z = velSmootherZ:get(accel.z, data.dt)
+    -- Smooth acceleration data
+    accel.x = velSmootherX:get(accel.x, data.dt)
+    accel.y = velSmootherY:get(accel.y, data.dt)
+    accel.z = velSmootherZ:get(accel.z, data.dt)
 
-  local rawFwdForce = -accel.y / (data.dt * 100)
-  -- Vehicle-space +X points left, while positive camera yaw looks right.
-  local rawSideForce = accel.x / (data.dt * 100)
-  local rawUpForce = -accel.z / (data.dt * 100)
+    rawFwdForce = -accel.y / (data.dt * 100) * cameraEffectFactor
+    -- Vehicle-space +X points left, while positive camera yaw looks right.
+    rawSideForce = accel.x / (data.dt * 100) * cameraEffectFactor
+    rawUpForce = -accel.z / (data.dt * 100) * cameraEffectFactor
+  end
 
   -- Reduce impact of braking being detected as upward acceleration
   rawUpForce = lerp(0, rawUpForce, clamp(rawUpForce / -0.3, 0, 1))
@@ -650,7 +709,7 @@ function C:update(data)
   end
 
   profiler.start('FOVSpeedMod') -- Added dynamic speed-based FOV modulation (enhanceddriver)
-  self:updateFovSpeedMod(data)
+  self:updateFovSpeedMod(data, cameraEffectFactor)
   profiler.stop('FOVSpeedMod')
 
   -- physics-based position
@@ -671,7 +730,7 @@ function C:update(data)
   end
 
   -- physics+static position combination
-  combinedPos:setLerp(self.camPosInitialLocal, camPosLocal, self.physicsFactor)
+  combinedPos:setLerp(self.camPosInitialLocal, camPosLocal, self.physicsFactor * cameraEffectFactor)
 
   -- left/right head sticking out position
   local minAngle = 70      -- starting angle when driver will start looking back
@@ -764,27 +823,32 @@ function C:update(data)
   end
 
   profiler.start('SpeedShake') -- Added speed-dependent shake effect (enhanceddriver)
-  self.speedshake:update(data)
+  local speedShakeStrength = cameraEffectFactor > 0 and self.speedshake:getShakeStrength(data) * cameraEffectFactor or 0
+  self.speedshake:update(data, speedShakeStrength)
   profiler.stop('SpeedShake')
 
   -- Detect angle of drift and apply camera shake
   -- (Is it possible to do apply this with wheel slip instead?)
-  local flatVelocity = carRotInverse * data.vel
   profiler.start('DriftShake') -- Added drift angle shake effect (enhanceddriver)
-  flatVelocity.z = 0
-  flatVelocity = carRot * flatVelocity
+  local driftAngle = 0
+  if cameraEffectFactor > 0 then
+    local flatVelocity = carRotInverse * data.vel
+    flatVelocity.z = 0
+    flatVelocity = carRot * flatVelocity
 
-  local driftAngle = carRot:dot(quatFromDir(flatVelocity))
+    if flatVelocity:squaredLength() > 1e-8 then
+      driftAngle = carRot:dot(quatFromDir(flatVelocity))
 
-  if driftAngle >= 0.5 then
-    driftAngle = 1 - driftAngle
+      if driftAngle >= 0.5 then
+        driftAngle = 1 - driftAngle
+      end
+
+      driftAngle = driftAngle * 1.5
+      driftAngle = lerp(0, driftAngle, clamp(flatVelocity:length() / 10, 0, 1))
+    end
   end
 
-  driftAngle = driftAngle * 1.5
-
-  driftAngle = lerp(0, driftAngle, clamp(flatVelocity:length() / 10, 0, 1))
-
-  self.driftshake:update(data, driftAngle)
+  self.driftshake:update(data, driftAngle * cameraEffectFactor)
   self.hasResetted = false
   profiler.stop('DriftShake')
   profiler.frame(data.dt)
