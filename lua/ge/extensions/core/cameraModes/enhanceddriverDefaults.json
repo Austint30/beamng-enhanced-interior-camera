@@ -130,7 +130,7 @@
       "rollSmoothing": 0.5
     },
     "VR (Comfort)": {
-      "disableHorizonLockWhileTumbling": false,
+      "disableHorizonLockWhileTumbling": true,
       "gForceZ": 0,
       "gForceAccel": 0,
       "gForceDecel": 0,

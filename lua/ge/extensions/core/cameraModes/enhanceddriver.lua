@@ -300,7 +300,10 @@ local rot = vec3()
 local left, ref, back = vec3(), vec3(), vec3()
 local carLeft, carFwd, carUp, carRot, carRotInverse = vec3(), vec3(), vec3(), quat(), quat()
 local nodePos = vec3()
-local camUp, camRot = vec3(), quat()
+local camUp, camRot, attachedCamRot = vec3(), quat(), quat()
+local normalCamFwd, normalCamUp = vec3(), vec3()
+local attachedCamFwd, attachedCamUp = vec3(), vec3()
+local blendedCamFwd, blendedCamUp = vec3(), vec3()
 local camPosLocal, combinedPos, rotationOffset = vec3(), vec3(), vec3()
 local intermediateCamPos = vec3()
 local nRockPos, projectedRockPos = vec3(), vec3()
@@ -428,12 +431,9 @@ function C:update(data)
   carUp:setCross(carLeft, carFwd); carUp:normalize()
   local gForceTumbleFactor = self.tumbleDetection:getGForceFactor(carUp, data.dt)
 
-  local horizonTumbleFactor = 1
-  if self:getSettingsValue('disableHorizonLockWhileTumbling', false) then
-    horizonTumbleFactor = gForceTumbleFactor
-  end
-  local effectivePitchHorizonLock = self:getSettingsValue('lockPitchToHorizon', 0) * horizonTumbleFactor
-  local effectiveRollHorizonLock = self:getSettingsValue('lockRollToHorizon', 0) * horizonTumbleFactor
+  local attachToCarWhileTumbling = self:getSettingsValue('disableHorizonLockWhileTumbling', false)
+  local pitchHorizonLock = self:getSettingsValue('lockPitchToHorizon', 0)
+  local rollHorizonLock = self:getSettingsValue('lockRollToHorizon', 0)
 
   -- Smooth velocity using rock on a string algorithm
   self.rockPos:set(push3(self.rockPos) - push3(data.vel) * data.dt)
@@ -467,11 +467,11 @@ function C:update(data)
   camRot:setFromDir(-push3(carFwd))
   camUp:setRotate(camRot, vecZ)
   local carRoll = math.atan2(push3(camUp):dot(-push3(carLeft)), camUp:dot(carUp))
-  local carRollFactor = 1 - effectiveRollHorizonLock * smootheststep(clamp(1.42 * carUp.z, 0, 1))
+  local carRollFactor = 1 - rollHorizonLock * smootheststep(clamp(1.42 * carUp.z, 0, 1))
   local camRoll = carRoll * carRollFactor
 
   local carPitch = math.atan2(push3(vecZ):dot(-push3(carFwd)), camUp:dot(carUp))
-  local carPitchFactor = effectivePitchHorizonLock * smoothstep(clamp(1.2 * carUp.z, 0, 1))
+  local carPitchFactor = pitchHorizonLock * smoothstep(clamp(1.2 * carUp.z, 0, 1))
   local camPitch = carPitch * carPitchFactor
 
   -- Look-ahead angle
@@ -598,15 +598,50 @@ function C:update(data)
   local finalCamPitch = lerp(
     pitchAngleFromForces,
     camPitch + pitchAngleFromForces,
-    effectivePitchHorizonLock
+    pitchHorizonLock
   )
 
+  local cameraYawOffset = math.rad(self.camRot.x) + lookAheadAngleOffset +
+    steeringLookAheadAngleOffset + sideImpactYawAngleFromForces
+  local cameraPitchOffset = math.rad(self.camRot.y) + finalCamPitch
+  local cameraRollOffset = camRoll + sideImpactRollAngleFromForces + sideLeanRollAngleFromForces
+
   camRot = rotateEuler(
-    math.rad(self.camRot.x) + lookAheadAngleOffset + steeringLookAheadAngleOffset + sideImpactYawAngleFromForces,
-    math.rad(self.camRot.y) + finalCamPitch,
-    camRoll + sideImpactRollAngleFromForces + sideLeanRollAngleFromForces,
+    cameraYawOffset,
+    cameraPitchOffset,
+    cameraRollOffset,
     camRot
   ) -- stable hood line
+
+  if attachToCarWhileTumbling and gForceTumbleFactor < 1 then
+    -- Blend the forward and up axes separately instead of switching algorithms or
+    -- interpolating whole quaternions. This preserves a gradual attachment while
+    -- avoiding the unwanted yaw arc produced by quaternion interpolation.
+    normalCamFwd:setRotate(camRot, vecY)
+    normalCamUp:setRotate(camRot, vecZ)
+
+    attachedCamRot:setFromDir(-push3(carFwd), carUp)
+    rotateEuler(
+      cameraYawOffset,
+      math.rad(self.camRot.y) + pitchAngleFromForces,
+      sideImpactRollAngleFromForces + sideLeanRollAngleFromForces,
+      attachedCamRot
+    )
+    attachedCamFwd:setRotate(attachedCamRot, vecY)
+    attachedCamUp:setRotate(attachedCamRot, vecZ)
+
+    local attachmentFactor = 1 - gForceTumbleFactor
+    blendedCamFwd:setLerp(normalCamFwd, attachedCamFwd, attachmentFactor)
+    blendedCamUp:setLerp(normalCamUp, attachedCamUp, attachmentFactor)
+
+    -- A near-opposite vector pair can briefly collapse a linear blend. Falling back
+    -- to the attached axis keeps the result valid at extreme tumble orientations.
+    if blendedCamFwd:squaredLength() < 1e-8 then blendedCamFwd:set(attachedCamFwd) end
+    if blendedCamUp:squaredLength() < 1e-8 then blendedCamUp:set(attachedCamUp) end
+    blendedCamFwd:normalize()
+    blendedCamUp:normalize()
+    camRot:setFromDir(blendedCamFwd, blendedCamUp)
+  end
   profiler.stop('GForce')
 
   local notifiedFov = self.manualzoom:update(data)

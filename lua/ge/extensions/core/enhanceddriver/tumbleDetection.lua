@@ -15,7 +15,9 @@ C.__index = C
 
 function C:init()
   -- Suppression rises with the second rate and recovers with the first rate.
-  self.suppressionSmoother = newTemporalSmoothingNonLinear(2.5, 8, 0)
+  -- Let sustained tumbles engage gradually, but restore normal camera effects
+  -- promptly once the tumble ends.
+  self.suppressionSmoother = newTemporalSmoothingNonLinear(6, 4, 0)
   self.previousUp = vec3()
   self.hasPreviousUp = false
   self.debugTimer = 0
