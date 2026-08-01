@@ -139,6 +139,20 @@
               :model-value="displayValue(field)"
               @update:model-value="value => updateSetting(field, value)"
             />
+            <div class="setting-switch">
+              <div class="setting-switch-copy">
+                <div class="setting-switch-label">Disable Horizon Lock While Tumbling</div>
+                <div class="setting-switch-description">
+                  Gradually attaches the camera to the vehicle when the vehicle starts tumbling.
+                </div>
+              </div>
+              <BngSwitch
+                class="setting-switch-control"
+                :model-value="activeValues.disableHorizonLockWhileTumbling === true"
+                aria-label="Disable horizon lock while tumbling"
+                @update:model-value="value => updateBooleanSetting('disableHorizonLockWhileTumbling', value)"
+              />
+            </div>
           </div>
         </div>
       </BngTabs>
@@ -173,6 +187,7 @@ import {
   BngDropdown,
   BngIcon,
   BngInput,
+  BngSwitch,
   BngTabs,
   icons,
 } from "@/common/components/base"
@@ -646,6 +661,18 @@ function updateSetting(field, value) {
   queueSave()
 }
 
+function updateBooleanSetting(key, value) {
+  if (chosenPreset.value !== CUSTOM_PRESET) {
+    presets[CUSTOM_PRESET] = clone(activeValues)
+    chosenPreset.value = CUSTOM_PRESET
+    presetName.value = ""
+  }
+
+  activeValues[key] = value === true
+  presets[CUSTOM_PRESET] = clone(activeValues)
+  queueSave()
+}
+
 function createPreset() {
   if (!canCreatePreset.value) return
   const name = normalizedPresetName.value
@@ -859,6 +886,37 @@ void loadSettings()
     color: rgba(var(--bng-off-white-rgb), 0.82);
     font-size: 0.86rem;
   }
+}
+
+.setting-switch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--bng-corners-1);
+  background: rgba(var(--bng-cool-gray-700-rgb), 0.26);
+}
+
+.setting-switch-copy {
+  min-width: 0;
+}
+
+.setting-switch-label {
+  color: var(--bng-off-white);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.setting-switch-description {
+  margin-top: 0.15rem;
+  color: rgba(var(--bng-off-white-rgb), 0.68);
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.setting-switch-control {
+  flex: 0 0 auto;
 }
 
 .create-preset {

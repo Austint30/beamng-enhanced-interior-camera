@@ -21,6 +21,8 @@ end
 local manualzoom = require('core/cameraModes/manualzoom')
 local shake = require('core/cameraModes/speedshake')
 local profiler = require('core/enhanceddriver/profiler')
+local steeringLookAhead = require('core/enhanceddriver/steeringLookAhead')
+local tumbleDetection = require('core/enhanceddriver/tumbleDetection')
 
 -- Normalize camera UI events so enhanceddriver looks like driver to the UI.
 -- Fixes cockpit UI showing when this camera is active.
@@ -92,12 +94,10 @@ function C:init()
   self.relativePitch = 0
   self.fwdSpeed = 0
   self.manualzoom = manualzoom()
+  self.steeringLookAhead = steeringLookAhead()
+  self.tumbleDetection = tumbleDetection()
   self:onVehicleCameraConfigChanged()
   self.vehicleIsMoving = false
-  self.steeringLookAheadSmoother = newTemporalSmoothingNonLinear(8, 8, 0)
-  self.steeringLookAheadVehicleId = nil
-  self.steeringLookAheadDebugState = nil
-  self.steeringLookAheadDebugTimer = 0
 
   self.gForceYBase = 0.45
   self.gForceSideYawBase = 0.3
@@ -151,7 +151,8 @@ function C:onVehicleCameraConfigChanged()
   --trigger reloading of new vehicle from settings
   self.seatPosition = nil
   self.seatRotation = 0
-  self:invalidateSteeringLookAheadRegistration()
+  self.steeringLookAhead:invalidateRegistration()
+  self.tumbleDetection:reset()
   --trigger gathering of new initial node position
   self.camPosInitialLocal = nil
   self.marginX = nil
@@ -245,134 +246,6 @@ function C:getSettingsValue(key, fallback)
   return self.edcSettings[key]
 end
 
-function C:resetSteeringLookAhead()
-  if self.steeringLookAheadSmoother then
-    self.steeringLookAheadSmoother:reset()
-  end
-  self.steeringLookAheadDebugTimer = 0
-end
-
-function C:invalidateSteeringLookAheadRegistration()
-  -- Vehicle Lua reloads discard their notification list while the GE bridge can retain
-  -- its registration bookkeeping. Unregistering here lets the next update subscribe again.
-  local vehicleId = self.steeringLookAheadVehicleId
-  if vehicleId then
-    local vehicle = getObjectByID(vehicleId)
-    if vehicle then
-      log(
-        'D',
-        'enhanceddriver.steeringLookAhead',
-        string.format('Invalidating steering_input notification: vehicleId=%s', tostring(vehicleId))
-      )
-      core_vehicleBridge.unregisterValueChangeNotification(vehicle, 'steering_input')
-    end
-  end
-
-  self.steeringLookAheadVehicleId = nil
-  self.steeringLookAheadDebugState = nil
-  self:resetSteeringLookAhead()
-end
-
-function C:setSteeringLookAheadDebugState(state, message)
-  if self.steeringLookAheadDebugState == state then
-    return
-  end
-
-  self.steeringLookAheadDebugState = state
-  log('D', 'enhanceddriver.steeringLookAhead', message)
-end
-
-function C:getSteeringLookAheadInput(data)
-  local vehicleId = data.veh:getId()
-  if self.steeringLookAheadVehicleId ~= vehicleId then
-    log(
-      'D',
-      'enhanceddriver.steeringLookAhead',
-      string.format(
-        'Registering steering_input notification: vehicleId=%s previousVehicleId=%s',
-        tostring(vehicleId),
-        tostring(self.steeringLookAheadVehicleId)
-      )
-    )
-    core_vehicleBridge.registerValueChangeNotification(data.veh, 'steering_input')
-    self.steeringLookAheadVehicleId = vehicleId
-    self:resetSteeringLookAhead()
-  end
-
-  local rawSteeringInput = core_vehicleBridge.getCachedVehicleData(vehicleId, 'steering_input')
-  local numericSteeringInput = tonumber(rawSteeringInput)
-  local steeringInput = clamp(numericSteeringInput or 0, -1, 1)
-  return steeringInput, rawSteeringInput, numericSteeringInput
-end
-
-function C:getSteeringLookAheadAngleOffset(data)
-  local steeringLookAheadAngle = self:getSettingsValue('steeringLookAheadAngle', 0)
-  if data.openxrSessionRunning then
-    self:setSteeringLookAheadDebugState(
-      'disabledOpenXR',
-      'Steering lookahead disabled because OpenXR is active'
-    )
-    self.steeringLookAheadSmoother:set(0)
-    return 0
-  end
-
-  if steeringLookAheadAngle == 0 then
-    self:setSteeringLookAheadDebugState(
-      'disabledAngle',
-      'Steering lookahead disabled because steeringLookAheadAngle is 0'
-    )
-    self.steeringLookAheadSmoother:set(0)
-    return 0
-  end
-
-  local vehicleId = data.veh:getId()
-  local steeringLookAheadSmoothness = clamp(
-    self:getSettingsValue('steeringLookAheadSmoothness', 50) / 100,
-    0,
-    1
-  )
-  self:setSteeringLookAheadDebugState(
-    'active',
-    string.format(
-      'Steering lookahead active: vehicleId=%s angle=%.3f smoothness=%.3f',
-      tostring(vehicleId),
-      steeringLookAheadAngle,
-      steeringLookAheadSmoothness
-    )
-  )
-
-  local steeringInput, rawSteeringInput, numericSteeringInput = self:getSteeringLookAheadInput(data)
-  local steeringLookAheadRate = lerp(20, 0.5, smootheststep(steeringLookAheadSmoothness))
-  local smoothedSteeringInput = self.steeringLookAheadSmoother:getWithRate(
-    steeringInput,
-    data.dt,
-    steeringLookAheadRate
-  )
-  local steeringLookAheadAngleOffset = math.rad(smoothedSteeringInput * steeringLookAheadAngle)
-
-  self.steeringLookAheadDebugTimer = self.steeringLookAheadDebugTimer + data.dt
-  if self.steeringLookAheadDebugTimer >= 1 then
-    self.steeringLookAheadDebugTimer = 0
-    log(
-      'D',
-      'enhanceddriver.steeringLookAhead',
-      string.format(
-        'steering_input read: vehicleId=%s raw=%s rawType=%s numeric=%s normalized=%.4f smoothed=%.4f rate=%.4f angleOffsetDeg=%.4f',
-        tostring(vehicleId),
-        tostring(rawSteeringInput),
-        type(rawSteeringInput),
-        tostring(numericSteeringInput),
-        steeringInput,
-        smoothedSteeringInput,
-        steeringLookAheadRate,
-        math.deg(steeringLookAheadAngleOffset)
-      )
-    )
-  end
-
-  return steeringLookAheadAngleOffset
-end
-
 function C:resetSeat()
   self.rockPos = vec3()
   self.seatPosition = vec3()
@@ -392,7 +265,8 @@ function C:reset()
   self.relativeYaw = 0
   self.relativePitch = 0
   self.rockPos = vec3()
-  self:invalidateSteeringLookAheadRegistration()
+  self.steeringLookAhead:invalidateRegistration()
+  self.tumbleDetection:reset()
 end
 
 function C:updateFovSpeedMod(data)
@@ -552,6 +426,14 @@ function C:update(data)
   carLeft:setSub2(left, ref); carLeft:normalize()
   carFwd:setSub2(back, ref); carFwd:normalize()
   carUp:setCross(carLeft, carFwd); carUp:normalize()
+  local gForceTumbleFactor = self.tumbleDetection:getGForceFactor(carUp, data.dt)
+
+  local horizonTumbleFactor = 1
+  if self:getSettingsValue('disableHorizonLockWhileTumbling', false) then
+    horizonTumbleFactor = gForceTumbleFactor
+  end
+  local effectivePitchHorizonLock = self:getSettingsValue('lockPitchToHorizon', 0) * horizonTumbleFactor
+  local effectiveRollHorizonLock = self:getSettingsValue('lockRollToHorizon', 0) * horizonTumbleFactor
 
   -- Smooth velocity using rock on a string algorithm
   self.rockPos:set(push3(self.rockPos) - push3(data.vel) * data.dt)
@@ -566,12 +448,17 @@ function C:update(data)
   end
 
   -- Smooth car fwd direction
-  local lerpedCarFwd = lerp(self.lastCarFwd, carFwd, (1 - self.edcSettings.pitchSmoothing) * data.dt * 20)
+  -- Full tumble attachment raises the follow factor to 1, removing orientation lag.
+  local pitchSmoothingFactor = (1 - self:getSettingsValue('pitchSmoothing', 0)) * data.dt * 20
+  local pitchFollowFactor = lerp(1, pitchSmoothingFactor, gForceTumbleFactor)
+  local lerpedCarFwd = lerp(self.lastCarFwd, carFwd, pitchFollowFactor)
   carFwd.z = lerpedCarFwd.z
   self.lastCarFwd:set(carFwd)
 
   -- Smooth car left direction
-  local lerpedCarLeft = lerp(self.lastCarLeft, carLeft, (1 - self.edcSettings.rollSmoothing) * data.dt * 20)
+  local rollSmoothingFactor = (1 - self:getSettingsValue('rollSmoothing', 0)) * data.dt * 20
+  local rollFollowFactor = lerp(1, rollSmoothingFactor, gForceTumbleFactor)
+  local lerpedCarLeft = lerp(self.lastCarLeft, carLeft, rollFollowFactor)
   carLeft.z = lerpedCarLeft.z
   self.lastCarLeft:set(carLeft)
 
@@ -580,11 +467,11 @@ function C:update(data)
   camRot:setFromDir(-push3(carFwd))
   camUp:setRotate(camRot, vecZ)
   local carRoll = math.atan2(push3(camUp):dot(-push3(carLeft)), camUp:dot(carUp))
-  local carRollFactor = 1 - self.edcSettings.lockRollToHorizon * smootheststep(clamp(1.42 * carUp.z, 0, 1))
+  local carRollFactor = 1 - effectiveRollHorizonLock * smootheststep(clamp(1.42 * carUp.z, 0, 1))
   local camRoll = carRoll * carRollFactor
 
   local carPitch = math.atan2(push3(vecZ):dot(-push3(carFwd)), camUp:dot(carUp))
-  local carPitchFactor = self.edcSettings.lockPitchToHorizon * smoothstep(clamp(1.2 * carUp.z, 0, 1))
+  local carPitchFactor = effectivePitchHorizonLock * smoothstep(clamp(1.2 * carUp.z, 0, 1))
   local camPitch = carPitch * carPitchFactor
 
   -- Look-ahead angle
@@ -600,7 +487,11 @@ function C:update(data)
 
   -- Steering look-ahead follows the supported, normalized vehicle steering input.
   -- Keep it separate from BeamNG's velocity-based look-ahead so users can tune it independently.
-  local steeringLookAheadAngleOffset = self:getSteeringLookAheadAngleOffset(data)
+  local steeringLookAheadAngleOffset = self.steeringLookAhead:getAngleOffset(
+    data,
+    self:getSettingsValue('steeringLookAheadAngle', 0),
+    self:getSettingsValue('steeringLookAheadSmoothness', 50)
+  )
 
   -- Rotate the camera in response to longitudinal, lateral, and vertical g-forces.
   profiler.start('GForce') -- Added g-force smoothing and rotation blending (enhanceddriver)
@@ -684,16 +575,16 @@ function C:update(data)
   local sideImpactYawAngleFromForces = math.atan2(
     smoothedSideForce * self.gForceSideYawBase * self:getSettingsValue('gForceSideYaw'),
     1
-  )
+  ) * gForceTumbleFactor
   local sideImpactRollAngleFromForces = math.atan2(
     -smoothedSideForce * self.gForceSideRollBase * self:getSettingsValue('gForceSideRoll'),
     1
-  )
+  ) * gForceTumbleFactor
   -- Impact roll follows the inertial head yank; lean-in roll follows the applied lateral force.
   local sideLeanRollAngleFromForces = math.atan2(
     smoothedSideLeanForce * self.gForceSideLeanRollBase * self:getSettingsValue('gForceSideLeanRoll', 0),
     1
-  )
+  ) * gForceTumbleFactor
   local scaledUpForce = smoothedUpForce * self.gForceZBase * self:getSettingsValue('gForceZ')
   local scaledFwdForce = 0
   if smoothedFwdForce >= 0 then
@@ -702,12 +593,12 @@ function C:update(data)
     scaledFwdForce = smoothedFwdForce * self.gForceYBase * self:getSettingsValue('gForceDecel')
   end
 
-  local pitchAngleFromForces = -math.atan2(scaledUpForce + scaledFwdForce, 1)
+  local pitchAngleFromForces = -math.atan2(scaledUpForce + scaledFwdForce, 1) * gForceTumbleFactor
 
   local finalCamPitch = lerp(
     pitchAngleFromForces,
     camPitch + pitchAngleFromForces,
-    self.edcSettings.lockPitchToHorizon
+    effectivePitchHorizonLock
   )
 
   camRot = rotateEuler(
@@ -717,11 +608,6 @@ function C:update(data)
     camRot
   ) -- stable hood line
   profiler.stop('GForce')
-
-  -- Pitch smoothing
-  ----local roll, pitch, yaw = data.veh:getRollPitchYawAngularVelocity()
-  --local pitch = 0
-  --camDir = rotateEuler(math.rad(self.camRot.x) + lookAheadAngle, math.rad(self.camRot.y) - pitch, camRoll, camDir) -- stable hood line
 
   local notifiedFov = self.manualzoom:update(data)
   if notifiedFov then
