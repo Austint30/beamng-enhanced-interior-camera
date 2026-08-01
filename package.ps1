@@ -35,6 +35,7 @@ $zipPath = Join-Path -Path $distPath -ChildPath "$modBaseName.zip"
 
 # Source folders to be zipped
 $srcFolders = @(
+    "locales",
     "lua",
     "ui"
 )
