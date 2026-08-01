@@ -96,6 +96,8 @@ function C:init()
   self.vehicleIsMoving = false
   self.steeringLookAheadSmoother = newTemporalSmoothingNonLinear(8, 8, 0)
   self.steeringLookAheadVehicleId = nil
+  self.steeringLookAheadDebugState = nil
+  self.steeringLookAheadDebugTimer = 0
 
   self.gForceYBase = 0.45
   self.gForceSideYawBase = 0.3
@@ -149,10 +151,7 @@ function C:onVehicleCameraConfigChanged()
   --trigger reloading of new vehicle from settings
   self.seatPosition = nil
   self.seatRotation = 0
-  self.steeringLookAheadVehicleId = nil
-  if self.steeringLookAheadSmoother then
-    self.steeringLookAheadSmoother:reset()
-  end
+  self:invalidateSteeringLookAheadRegistration()
   --trigger gathering of new initial node position
   self.camPosInitialLocal = nil
   self.marginX = nil
@@ -246,6 +245,134 @@ function C:getSettingsValue(key, fallback)
   return self.edcSettings[key]
 end
 
+function C:resetSteeringLookAhead()
+  if self.steeringLookAheadSmoother then
+    self.steeringLookAheadSmoother:reset()
+  end
+  self.steeringLookAheadDebugTimer = 0
+end
+
+function C:invalidateSteeringLookAheadRegistration()
+  -- Vehicle Lua reloads discard their notification list while the GE bridge can retain
+  -- its registration bookkeeping. Unregistering here lets the next update subscribe again.
+  local vehicleId = self.steeringLookAheadVehicleId
+  if vehicleId then
+    local vehicle = getObjectByID(vehicleId)
+    if vehicle then
+      log(
+        'D',
+        'enhanceddriver.steeringLookAhead',
+        string.format('Invalidating steering_input notification: vehicleId=%s', tostring(vehicleId))
+      )
+      core_vehicleBridge.unregisterValueChangeNotification(vehicle, 'steering_input')
+    end
+  end
+
+  self.steeringLookAheadVehicleId = nil
+  self.steeringLookAheadDebugState = nil
+  self:resetSteeringLookAhead()
+end
+
+function C:setSteeringLookAheadDebugState(state, message)
+  if self.steeringLookAheadDebugState == state then
+    return
+  end
+
+  self.steeringLookAheadDebugState = state
+  log('D', 'enhanceddriver.steeringLookAhead', message)
+end
+
+function C:getSteeringLookAheadInput(data)
+  local vehicleId = data.veh:getId()
+  if self.steeringLookAheadVehicleId ~= vehicleId then
+    log(
+      'D',
+      'enhanceddriver.steeringLookAhead',
+      string.format(
+        'Registering steering_input notification: vehicleId=%s previousVehicleId=%s',
+        tostring(vehicleId),
+        tostring(self.steeringLookAheadVehicleId)
+      )
+    )
+    core_vehicleBridge.registerValueChangeNotification(data.veh, 'steering_input')
+    self.steeringLookAheadVehicleId = vehicleId
+    self:resetSteeringLookAhead()
+  end
+
+  local rawSteeringInput = core_vehicleBridge.getCachedVehicleData(vehicleId, 'steering_input')
+  local numericSteeringInput = tonumber(rawSteeringInput)
+  local steeringInput = clamp(numericSteeringInput or 0, -1, 1)
+  return steeringInput, rawSteeringInput, numericSteeringInput
+end
+
+function C:getSteeringLookAheadAngleOffset(data)
+  local steeringLookAheadAngle = self:getSettingsValue('steeringLookAheadAngle', 0)
+  if data.openxrSessionRunning then
+    self:setSteeringLookAheadDebugState(
+      'disabledOpenXR',
+      'Steering lookahead disabled because OpenXR is active'
+    )
+    self.steeringLookAheadSmoother:set(0)
+    return 0
+  end
+
+  if steeringLookAheadAngle == 0 then
+    self:setSteeringLookAheadDebugState(
+      'disabledAngle',
+      'Steering lookahead disabled because steeringLookAheadAngle is 0'
+    )
+    self.steeringLookAheadSmoother:set(0)
+    return 0
+  end
+
+  local vehicleId = data.veh:getId()
+  local steeringLookAheadSmoothness = clamp(
+    self:getSettingsValue('steeringLookAheadSmoothness', 50) / 100,
+    0,
+    1
+  )
+  self:setSteeringLookAheadDebugState(
+    'active',
+    string.format(
+      'Steering lookahead active: vehicleId=%s angle=%.3f smoothness=%.3f',
+      tostring(vehicleId),
+      steeringLookAheadAngle,
+      steeringLookAheadSmoothness
+    )
+  )
+
+  local steeringInput, rawSteeringInput, numericSteeringInput = self:getSteeringLookAheadInput(data)
+  local steeringLookAheadRate = lerp(20, 0.5, smootheststep(steeringLookAheadSmoothness))
+  local smoothedSteeringInput = self.steeringLookAheadSmoother:getWithRate(
+    steeringInput,
+    data.dt,
+    steeringLookAheadRate
+  )
+  local steeringLookAheadAngleOffset = math.rad(smoothedSteeringInput * steeringLookAheadAngle)
+
+  self.steeringLookAheadDebugTimer = self.steeringLookAheadDebugTimer + data.dt
+  if self.steeringLookAheadDebugTimer >= 1 then
+    self.steeringLookAheadDebugTimer = 0
+    log(
+      'D',
+      'enhanceddriver.steeringLookAhead',
+      string.format(
+        'steering_input read: vehicleId=%s raw=%s rawType=%s numeric=%s normalized=%.4f smoothed=%.4f rate=%.4f angleOffsetDeg=%.4f',
+        tostring(vehicleId),
+        tostring(rawSteeringInput),
+        type(rawSteeringInput),
+        tostring(numericSteeringInput),
+        steeringInput,
+        smoothedSteeringInput,
+        steeringLookAheadRate,
+        math.deg(steeringLookAheadAngleOffset)
+      )
+    )
+  end
+
+  return steeringLookAheadAngleOffset
+end
+
 function C:resetSeat()
   self.rockPos = vec3()
   self.seatPosition = vec3()
@@ -265,7 +392,7 @@ function C:reset()
   self.relativeYaw = 0
   self.relativePitch = 0
   self.rockPos = vec3()
-  self.steeringLookAheadSmoother:reset()
+  self:invalidateSteeringLookAheadRegistration()
 end
 
 function C:updateFovSpeedMod(data)
@@ -473,33 +600,7 @@ function C:update(data)
 
   -- Steering look-ahead follows the supported, normalized vehicle steering input.
   -- Keep it separate from BeamNG's velocity-based look-ahead so users can tune it independently.
-  local steeringLookAheadAngleOffset = 0
-  local steeringLookAheadAngle = self:getSettingsValue('steeringLookAheadAngle', 0)
-  if not data.openxrSessionRunning and steeringLookAheadAngle ~= 0 then
-    local vehicleId = data.veh:getId()
-    if self.steeringLookAheadVehicleId ~= vehicleId then
-      core_vehicleBridge.registerValueChangeNotification(data.veh, 'steering_input')
-      self.steeringLookAheadVehicleId = vehicleId
-      self.steeringLookAheadSmoother:reset()
-    end
-
-    local steeringInput = core_vehicleBridge.getCachedVehicleData(vehicleId, 'steering_input') or 0
-    steeringInput = clamp(tonumber(steeringInput) or 0, -1, 1)
-    local steeringLookAheadSmoothness = clamp(
-      self:getSettingsValue('steeringLookAheadSmoothness', 50) / 100,
-      0,
-      1
-    )
-    local steeringLookAheadRate = lerp(20, 0.5, smootheststep(steeringLookAheadSmoothness))
-    local smoothedSteeringInput = self.steeringLookAheadSmoother:getWithRate(
-      steeringInput,
-      data.dt,
-      steeringLookAheadRate
-    )
-    steeringLookAheadAngleOffset = math.rad(smoothedSteeringInput * steeringLookAheadAngle)
-  else
-    self.steeringLookAheadSmoother:set(0)
-  end
+  local steeringLookAheadAngleOffset = self:getSteeringLookAheadAngleOffset(data)
 
   -- Rotate the camera in response to longitudinal, lateral, and vertical g-forces.
   profiler.start('GForce') -- Added g-force smoothing and rotation blending (enhanceddriver)
