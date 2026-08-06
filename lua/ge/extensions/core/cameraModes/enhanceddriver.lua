@@ -557,17 +557,25 @@ function C:update(data)
   profiler.start('GForce') -- Added g-force smoothing and rotation blending (enhanceddriver)
   local rawFwdForce, rawSideForce, rawUpForce = 0, 0, 0
   if cameraEffectFactor > 0 and data.dt > 1e-6 then
-    local accel = carRotInverse * data.vel - carRotInverse * data.prevVel
+    local velDelta = carRotInverse * data.vel - carRotInverse * data.prevVel
 
-    -- Smooth acceleration data
-    accel.x = velSmootherX:get(accel.x, data.dt)
-    accel.y = velSmootherY:get(accel.y, data.dt)
-    accel.z = velSmootherZ:get(accel.z, data.dt)
+    -- Convert per-frame velocity delta to per-second acceleration before smoothing.
+    -- This makes the smoother operate on frame-rate-independent values, preventing
+    -- large dt spikes (low FPS) from causing compounding oscillation in the smoothers
+    -- that results in visible camera jerking.
+    local accelX = velDelta.x / data.dt
+    local accelY = velDelta.y / data.dt
+    local accelZ = velDelta.z / data.dt
 
-    rawFwdForce = -accel.y / (data.dt * 100) * cameraEffectFactor
+    -- Smooth per-second acceleration data
+    accelX = velSmootherX:get(accelX, data.dt)
+    accelY = velSmootherY:get(accelY, data.dt)
+    accelZ = velSmootherZ:get(accelZ, data.dt)
+
+    rawFwdForce = -accelY / 100 * cameraEffectFactor
     -- Vehicle-space +X points left, while positive camera yaw looks right.
-    rawSideForce = accel.x / (data.dt * 100) * cameraEffectFactor
-    rawUpForce = -accel.z / (data.dt * 100) * cameraEffectFactor
+    rawSideForce = accelX / 100 * cameraEffectFactor
+    rawUpForce = -accelZ / 100 * cameraEffectFactor
   end
 
   -- Reduce impact of braking being detected as upward acceleration
