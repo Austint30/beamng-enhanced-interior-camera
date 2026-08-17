@@ -624,11 +624,11 @@ function C:update(data)
   local sideImpactYawAngleFromForces = math.atan2(
     smoothedSideForce * self.gForceSideYawBase * self:getSettingsValue('gForceSideYaw'),
     1
-  ) * gForceTumbleFactor
+  )
   local sideImpactRollAngleFromForces = math.atan2(
     -smoothedSideForce * self.gForceSideRollBase * self:getSettingsValue('gForceSideRoll'),
     1
-  ) * gForceTumbleFactor
+  )
   -- Impact roll follows the inertial head yank; lean-in roll follows the applied lateral force.
   local sideLeanRollAngleFromForces = math.atan2(
     smoothedSideLeanForce * self.gForceSideLeanRollBase * self:getSettingsValue('gForceSideLeanRoll', 0),
@@ -642,7 +642,7 @@ function C:update(data)
     scaledFwdForce = smoothedFwdForce * self.gForceYBase * self:getSettingsValue('gForceDecel')
   end
 
-  local pitchAngleFromForces = -math.atan2(scaledUpForce + scaledFwdForce, 1) * gForceTumbleFactor
+  local pitchAngleFromForces = -math.atan2(scaledUpForce + scaledFwdForce, 1)
 
   local horizonPitchOffset = lerp(0, camPitch, pitchHorizonLock)
 
