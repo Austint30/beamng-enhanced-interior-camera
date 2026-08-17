@@ -46,8 +46,6 @@ do
       return orig(evt, payload, ...)
     end
     gh._edc_wrapped = true
-  else
-    log("E", "guihooks.trigger", "Unable to install UI normalizer (guihooks missing or already wrapped)")
   end
 end
 
@@ -67,19 +65,8 @@ do
       return origHook(evt, ...)
     end
     ex._edc_cam_wrap = true
-  else
-    log("E", "extensions.hook", "Unable to install normalizer (extensions.hook missing or already wrapped)")
   end
 end
-
-local gForceFwdSmoother = newTemporalSmoothingNonLinear(4, 4)
-local gForceSideSmoother = newTemporalSmoothingNonLinear(4, 4)
-local gForceSideLeanSmoother = newTemporalSmoothingNonLinear(4, 4)
-local gForceUpSmoother = newTemporalSmoothingNonLinear(5, 5)
-
-local velSmootherX = newTemporalSmoothingNonLinear(12, 16)
-local velSmootherY = newTemporalSmoothingNonLinear(12, 16)
-local velSmootherZ = newTemporalSmoothingNonLinear(12, 16)
 
 local cameraEffectSuppressionDuration = 0.5
 local cameraEffectRecoveryRate = 8
@@ -105,6 +92,16 @@ function C:init()
     cameraEffectRecoveryRate,
     0
   )
+  -- Moved these smoothers to be per-instance instead of global.
+  -- Was the cause of https://github.com/Austint30/beamng-enhanced-interior-camera/issues/23. 
+  -- Moving these here fixed the bug.
+  self.gForceFwdSmoother = newTemporalSmoothingNonLinear(4, 4)
+  self.gForceSideSmoother = newTemporalSmoothingNonLinear(4, 4)
+  self.gForceSideLeanSmoother = newTemporalSmoothingNonLinear(4, 4)
+  self.gForceUpSmoother = newTemporalSmoothingNonLinear(5, 5)
+  self.velSmootherX = newTemporalSmoothingNonLinear(12, 16)
+  self.velSmootherY = newTemporalSmoothingNonLinear(12, 16)
+  self.velSmootherZ = newTemporalSmoothingNonLinear(12, 16)
   self:onVehicleCameraConfigChanged()
   self.vehicleIsMoving = false
 
@@ -134,7 +131,7 @@ function C:init()
   self:onSettingsChanged()
 end
 
-function C:onCameraChanged()
+function C:onCameraChanged(focused)
   self.disabledCockpitApps = false
 end
 
@@ -159,13 +156,13 @@ function C:resetTransientCameraEffects()
   self.tumbleDetection:reset()
   self.cameraEffectRecoverySmoother:set(0)
 
-  gForceFwdSmoother:reset()
-  gForceSideSmoother:reset()
-  gForceSideLeanSmoother:reset()
-  gForceUpSmoother:reset()
-  velSmootherX:reset()
-  velSmootherY:reset()
-  velSmootherZ:reset()
+  self.gForceFwdSmoother:reset()
+  self.gForceSideSmoother:reset()
+  self.gForceSideLeanSmoother:reset()
+  self.gForceUpSmoother:reset()
+  self.velSmootherX:reset()
+  self.velSmootherY:reset()
+  self.velSmootherZ:reset()
 
   if self.fovSmoother then self.fovSmoother:set(0) end
 end
@@ -354,7 +351,9 @@ local nRockPos, projectedRockPos = vec3(), vec3()
 function C:update(data)
   -- BeamNG marks vehicle rewinds and teleports in the supported camera data.
   -- Vehicle respawns/reloads also reach suppressCameraEffects through reset().
-  if data.teleported then self:suppressCameraEffects() end
+  if data.teleported then
+    self:suppressCameraEffects()
+  end
 
   self:disableCockpitApps()
 
@@ -547,9 +546,9 @@ function C:update(data)
     local accel = carRotInverse * data.vel - carRotInverse * data.prevVel
 
     -- Smooth acceleration data
-    accel.x = velSmootherX:get(accel.x, data.dt)
-    accel.y = velSmootherY:get(accel.y, data.dt)
-    accel.z = velSmootherZ:get(accel.z, data.dt)
+    accel.x = self.velSmootherX:get(accel.x, data.dt)
+    accel.y = self.velSmootherY:get(accel.y, data.dt)
+    accel.z = self.velSmootherZ:get(accel.z, data.dt)
 
     rawFwdForce = -accel.y / (data.dt * 100) * cameraEffectFactor
     -- Vehicle-space +X points left, while positive camera yaw looks right.
@@ -604,16 +603,16 @@ function C:update(data)
   end
   -----------------------------------------------------------------
 
-  local smoothedFwdForce = gForceFwdSmoother:get(rawFwdForce, data.dt)
-  local smoothedSideForce = gForceSideSmoother:get(rawSideForce, data.dt)
+  local smoothedFwdForce = self.gForceFwdSmoother:get(rawFwdForce, data.dt)
+  local smoothedSideForce = self.gForceSideSmoother:get(rawSideForce, data.dt)
   local sideLeanSmoothness = clamp(self:getSettingsValue('gForceSideLeanRollSmoothness', 75) / 100, 0, 1)
   local sideLeanSmoothingRate = lerp(8, 0.25, smootheststep(sideLeanSmoothness))
-  local smoothedSideLeanForce = gForceSideLeanSmoother:getWithRate(
+  local smoothedSideLeanForce = self.gForceSideLeanSmoother:getWithRate(
     rawSideLeanForce,
     data.dt,
     sideLeanSmoothingRate
   )
-  local smoothedUpForce = gForceUpSmoother:get(rawUpForce, data.dt)
+  local smoothedUpForce = self.gForceUpSmoother:get(rawUpForce, data.dt)
 
   if self.hasResetted then
     smoothedFwdForce = 0
