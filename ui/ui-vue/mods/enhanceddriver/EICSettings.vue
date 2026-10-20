@@ -35,6 +35,12 @@
 
         <div class="preset-actions">
           <BngButton
+            :accent="ACCENTS.main"
+            @click="openSavePrompt"
+          >
+            Save as preset…
+          </BngButton>
+          <BngButton
             :accent="ACCENTS.destructive"
             :disabled="!canDeletePreset"
             @click="deletePreset"
@@ -163,23 +169,6 @@
         </div>
       </BngTabs>
 
-      <div v-if="chosenPreset === CUSTOM_PRESET" class="create-preset">
-        <BngInput
-          v-model="presetName"
-          class="preset-name"
-          placeholder="New preset name"
-          :maxlength="48"
-          @keyup.enter="createPreset"
-        />
-        <BngButton
-          :accent="ACCENTS.main"
-          :disabled="!canCreatePreset"
-          @click="createPreset"
-        >
-          Save as preset
-        </BngButton>
-        <span v-if="presetNameError" class="preset-name-error">{{ presetNameError }}</span>
-      </div>
     </template>
   </section>
 </template>
@@ -191,7 +180,6 @@ import {
   ACCENTS,
   BngButton,
   BngIcon,
-  BngInput,
   BngRow,
   BngSmartSelect,
   BngTabs,
@@ -200,6 +188,7 @@ import {
 import { lua } from "@/bridge"
 import { runRaw } from "@/bridge/libs/Lua.js"
 import { useSettings } from "@/services/settings"
+import { openPrompt } from "@/services/popup"
 import SettingSlider from "./SettingSlider.vue"
 import SettingSwitch from "./SettingSwitch.vue"
 
@@ -507,7 +496,6 @@ const saveStatus = ref("")
 const activeTab = ref(0)
 const chosenPreset = ref("Default")
 const effectsEnabled = ref(true)
-const presetName = ref("")
 const presets = reactive({})
 const activeValues = reactive({})
 
@@ -575,24 +563,14 @@ const canDeletePreset = computed(
   () => chosenPreset.value === CUSTOM_PRESET || !DEFAULT_PRESETS.includes(chosenPreset.value)
 )
 
-const normalizedPresetName = computed(() => presetName.value.trim())
-const presetNameError = computed(() => {
-  const name = normalizedPresetName.value
-  if (!name) return ""
-  if (DEFAULT_PRESETS.includes(name) || name === CUSTOM_PRESET) {
-    return "That name is reserved."
-  }
-  if (Object.prototype.hasOwnProperty.call(presets, name)) {
-    return "A preset with that name already exists."
-  }
-  return ""
-})
-const canCreatePreset = computed(
-  () =>
-    chosenPreset.value === CUSTOM_PRESET &&
-    normalizedPresetName.value.length > 0 &&
-    !presetNameError.value
-)
+// Validation for the save-preset prompt: non-empty, reserved names rejected,
+// and the name must not already be taken by another preset.
+function validatePresetName(name) {
+  const trimmed = (name ?? "").trim()
+  if (!trimmed) return false
+  if (DEFAULT_PRESETS.includes(trimmed) || trimmed === CUSTOM_PRESET) return false
+  return !Object.prototype.hasOwnProperty.call(presets, trimmed)
+}
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
@@ -631,7 +609,6 @@ function loadActivePreset(name) {
 
 function selectPreset(name) {
   if (!Object.prototype.hasOwnProperty.call(presets, name)) return
-  presetName.value = ""
   loadActivePreset(name)
   queueSave()
 }
@@ -657,7 +634,6 @@ function updateSetting(field, value) {
   if (chosenPreset.value !== CUSTOM_PRESET) {
     presets[CUSTOM_PRESET] = clone(activeValues)
     chosenPreset.value = CUSTOM_PRESET
-    presetName.value = ""
   }
 
   activeValues[field.key] = toStoredValue(field, value)
@@ -686,7 +662,6 @@ function updateBooleanSetting(key, value) {
   if (chosenPreset.value !== CUSTOM_PRESET) {
     presets[CUSTOM_PRESET] = clone(activeValues)
     chosenPreset.value = CUSTOM_PRESET
-    presetName.value = ""
   }
 
   activeValues[key] = value === true
@@ -694,20 +669,37 @@ function updateBooleanSetting(key, value) {
   queueSave()
 }
 
-function createPreset() {
-  if (!canCreatePreset.value) return
-  const name = normalizedPresetName.value
-  presets[name] = clone(activeValues)
+async function openSavePrompt() {
+  const name = await openPrompt(
+    "Choose a name for the new preset.",
+    "Save as preset",
+    {
+      maxLength: 48,
+      validate: validatePresetName,
+      errorMessage: "That name is reserved or already in use.",
+      disableWhenInvalid: true,
+      buttons: [
+        {
+          label: "Cancel",
+          value: false,
+          extras: { cancel: true, outsideCancel: true, accent: ACCENTS.text },
+        },
+        { label: "Save", value: text => text, extras: { confirm: true } },
+      ],
+    }
+  )
+  if (!name) return
+  const trimmed = String(name).trim()
+  if (!validatePresetName(trimmed)) return
+  presets[trimmed] = clone(activeValues)
   delete presets[CUSTOM_PRESET]
-  chosenPreset.value = name
-  presetName.value = ""
+  chosenPreset.value = trimmed
   queueSave()
 }
 
 function deletePreset() {
   if (!canDeletePreset.value) return
   delete presets[chosenPreset.value]
-  presetName.value = ""
   loadActivePreset("Default")
   queueSave()
 }
@@ -860,7 +852,9 @@ void loadSettings()
 
 .preset-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 0.4rem;
   padding-right: 0.5rem;
 
   .bng-button { margin: 0; }
@@ -922,38 +916,10 @@ void loadSettings()
   }
 }
 
-.create-preset {
-  display: grid;
-  grid-template-columns: minmax(10rem, 1fr) auto;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.65rem;
-  border-radius: var(--bng-corners-1);
-  background: rgba(var(--bng-cool-gray-700-rgb), 0.42);
-}
-
-.preset-name {
-  min-width: 0;
-}
-
-.preset-name-error {
-  grid-column: 1 / -1;
-  color: var(--bng-add-red-300);
-  font-size: 0.8rem;
-}
-
 @media (max-width: 58rem) {
   .eic-header {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .create-preset {
-    grid-template-columns: 1fr;
-  }
-
-  .preset-name-error {
-    grid-column: 1;
   }
 }
 </style>
