@@ -181,7 +181,7 @@
             <SettingSwitch
               :model-value="arcadeChaseEnabled"
               label="Enable Arcade Chase Camera"
-              description="Enables an expiremental Arcade Chase Camera mode. This will be coming soon in an upcoming major update."
+              description="Enables an experimental Arcade Chase Camera mode. This will be coming soon in an upcoming major update."
               @update:model-value="toggleArcadeChase"
             />
           </div>
