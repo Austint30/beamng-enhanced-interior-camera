@@ -24,7 +24,7 @@ param (
     [switch]$Install
 )
 
-$modBaseName = "enhanceddriver"
+$modBaseName = "austint30.enhanced-interior-camera"
 
 $scriptPath = $PSScriptRoot
 $scriptFolder = Get-Item -Path $scriptPath
