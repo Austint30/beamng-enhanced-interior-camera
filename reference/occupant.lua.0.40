@@ -23,6 +23,40 @@ local manualzoom = require('core/cameraModes/manualzoom')
 local C = {}
 C.__index = C
 
+local shoulderInteriorDefaults = {
+  startYaw = 70,
+  lateralOffset = 0.26,
+  forwardOffset = -0.075,
+  verticalOffset = -0.02,
+  forwardMultiplier = 1,
+  verticalMultiplier = 1,
+}
+
+local shoulderExteriorDefaults = {
+  startYaw = 70,
+  lateralOffset = 0.6,
+  forwardOffset = -0.3,
+  verticalOffset = -0.1,
+  forwardMultiplier = 1.75,
+  verticalMultiplier = 1,
+}
+
+local function shoulderProfile(side, seatSide, configured)
+  local exterior = side == seatSide and seatSide ~= "center"
+  local profile = deepcopy(exterior and shoulderExteriorDefaults or shoulderInteriorDefaults)
+  tableMergeRecursive(profile, configured or {})
+  return profile
+end
+
+local function resolveLookBackSide(configuredSide, seatSide)
+  if configuredSide == "left" or configuredSide == "right" then return configuredSide end
+  if configuredSide == "auto" or configuredSide == "exterior" then
+    return seatSide == "right" and "right" or "left"
+  end
+  if seatSide == "right" then return "left" end
+  return "right"
+end
+
 function C:init()
   self.saveTimeout = nil
   self.camLastRot = vec3()
@@ -39,6 +73,12 @@ function C:init()
   self.dzSmoother = newTemporalSmoothing(3,1)
   self.prevCarPos = vec3()
   self.icon = "personSolid"
+  self.seatSide = self.seatSide or "center"
+  self.shoulderLeft = shoulderProfile("left", self.seatSide, self.shoulderLeft)
+  self.shoulderRight = shoulderProfile("right", self.seatSide, self.shoulderRight)
+  self.lookBack = self.lookBack or {}
+  self.lookBack.side = self.lookBack.side or "auto"
+  self.lookBack.yaw = tonumber(self.lookBack.yaw) or 160
   self.canUseVehicleTriggerCrosshair = true
   self:onVehicleCameraConfigChanged()
   self:onSettingsChanged()
@@ -53,10 +93,22 @@ function C:onVehicleCameraConfigChanged()
   self.camPosInitialLocal = nil
   self.marginX = nil
   self.cameraResetted = 3
+  self.occupantRefNodes = { ref = self.idRefOccupant, left = self.idLeftOccupant, back = self.idBackOccupant }
+  self.occupantDetached = false
 end
+
+function C:onOccupantDetached(breakGroup)
+  self.occupantDetached = self.occupantDetached or (breakGroup == "ocpAttach"..self.seatId)
+end
+
+function C:onVehicleResetted()
+  self.occupantDetached = false
+end
+
 function C:onCameraChanged(focused)
   if focused then
-    self._driverZoomActionMapPushed = pushActionMap("DriverCameraZoom")
+    pushActionMap("DriverCameraZoom")
+    self._driverZoomActionMapPushed = true
   else
     if self._driverZoomActionMapPushed then
       popActionMap("DriverCameraZoom")
@@ -106,6 +158,11 @@ function C:reset()
   core_camera.setCameraDriverZoom(0, self.player)
 end
 
+function C:onDeserialized()
+  self:onVehicleCameraConfigChanged()
+  self:reset()
+end
+
 local currentCarPos = vec3()
 local rot = vec3()
 local left, ref, back = vec3(), vec3(), vec3()
@@ -129,7 +186,7 @@ function C:update(data)
     data.res.rot:setFromDir(vecY, vecZ)
     return
   end
-  local camNodeID, rightHandDrive = core_camera.getDriverData(data.veh)
+  local camNodeID = self.camNodeID
 
   local zoomSmoothed = self.zoomSmoother:get(data.driverZoom or 0, data.dtSim)
   local rotZoomMul = 1 - zoomSmoothed * 0.88
@@ -141,7 +198,8 @@ function C:update(data)
     if type(vehConfigs) ~= "string" then vehConfigs = "{}" end
     vehConfigs = vehConfigs:gsub("'",'"') -- fix INI values that passed through javascript (e.g. when opening Options menu)
     vehConfigs = jsonDecode(vehConfigs) -- and then deserialize, so we can follow the user settings
-    local vehConfig = vehConfigs[vehicleName] or {0,0,0}
+    local configKey = vehicleName .. "::" .. tostring(self.seatId or self.name or "occupant")
+    local vehConfig = vehConfigs[configKey] or vehConfigs[vehicleName] or {0,0,0}
     self.seatPosition = vec3(0, vehConfig[2], vehConfig[3])
     self.seatRotation = vehConfig[1]
   end
@@ -199,9 +257,12 @@ function C:update(data)
   -- convert input into angles
   local maxAngleYaw = 160 -- max degrees the head will be looking back
   self.camRot.x = sideInput * maxAngleYaw
-  if data.lookBack then self.camRot.x = rightHandDrive and -maxAngleYaw or maxAngleYaw end
-  local maxAngleTiltUp = 40 -- max degrees the head will be looking up
-  local maxAngleTiltDown = 60 -- max degrees the head will be looking down
+  if data.lookBack then
+    local lookBackSide = resolveLookBackSide(self.lookBack.side, self.seatSide)
+    self.camRot.x = (lookBackSide == "left" and -1 or 1) * min(maxAngleYaw, abs(self.lookBack.yaw))
+  end
+  local maxAngleTiltUp = 80 -- max degrees the head will be looking up
+  local maxAngleTiltDown = 80 -- max degrees the head will be looking down
   self.camRot.y = vertInput * (vertInput > 0 and maxAngleTiltDown or maxAngleTiltUp)
 
   -- orientation
@@ -223,9 +284,10 @@ function C:update(data)
     seatRotation = 0 -- remove manual seat tilting
   end
   self.camRot:set(math.deg(rot.x), math.deg(rot.y) - seatRotation, math.deg(rot.z))
-  left:set(data.veh:getNodePositionXYZ(self.refNodes.left))
-  ref:set(data.veh:getNodePositionXYZ(self.refNodes.ref))
-  back:set(data.veh:getNodePositionXYZ(self.refNodes.back))
+  local refNodes = self.occupantDetached and self.occupantRefNodes or self.refNodes
+  left:set(data.veh:getNodePositionXYZ(refNodes.left))
+  ref:set(data.veh:getNodePositionXYZ(refNodes.ref))
+  back:set(data.veh:getNodePositionXYZ(refNodes.back))
 
   carLeft:setSub2(left, ref); carLeft:normalize()
   carFwd:setSub2(back, ref); carFwd:normalize()
@@ -238,7 +300,7 @@ function C:update(data)
   -- When vehicle flips, left and right sides of it flip aswell. To prevent this from happening
   -- We tempereraly stop projecting the rock position
   if self.rockPos:distance(projectedRockPos) < 0.1 then
-    self.rockPos = projectedRockPos
+    self.rockPos:set(projectedRockPos)
   else
     self.rockPos:resize(min(self.rockPos:length(), self.lookAheadSmoothness))
   end
@@ -283,6 +345,7 @@ function C:update(data)
 
   -- physics-based position
   nodePos:set(data.veh:getNodePositionXYZ(camNodeID or 0))
+  nodePos:setSub(ref)
   carRotInverse:set(carRot)
   carRotInverse:inverse()
   camPosLocal:setRotate(carRotInverse, nodePos)
@@ -300,28 +363,18 @@ function C:update(data)
   -- physics+static position combination
   combinedPos:setLerp(self.camPosInitialLocal, camPosLocal, data.openxrSessionRunning and 0 or self.physicsFactor)
 
-  -- left/right head sticking out position
-  local minAngle = 70 -- starting angle when driver will start looking back
-  local headOut = clamp(abs(self.camRot.x) - minAngle, 0, maxAngleYaw) / (maxAngleYaw - minAngle) -- how much the head is looking back, from 0 to 1
+  -- left/right shoulder behavior
+  local shoulder = self.camRot.x < 0 and self.shoulderLeft or self.shoulderRight
+  local minAngle = shoulder.startYaw
+  local headOut = clamp(abs(self.camRot.x) - minAngle, 0, maxAngleYaw) / (maxAngleYaw - minAngle)
   local lateralFactor = headOut
-  local forwardFactor = headOut
-  local verticalFactor = headOut
-  local lateralOffset = 0.26
-  local forwardOffset = -0.075
-  local verticalOffset = -0.02
-  local lookingThroughWindow = rightHandDrive == (self.camRot.x > 0)
-  if lookingThroughWindow then
-    forwardFactor = clamp(forwardFactor * 1.75, 0, 1)
-    verticalFactor = clamp(verticalFactor * 1.00, 0, 1)
-    forwardOffset = -0.3
-    lateralOffset = 0.5
-    lateralOffset = min(0.6, self.marginX)
-    verticalOffset = -0.1
-  end
+  local forwardFactor = clamp(headOut * shoulder.forwardMultiplier, 0, 1)
+  local verticalFactor = clamp(headOut * shoulder.verticalMultiplier, 0, 1)
+  local lateralOffset = min(shoulder.lateralOffset, self.marginX)
   rotationOffset:set(
     lateralOffset * lateralFactor * sign(-self.camRot.x), -- stick head out (or towards center)
-    forwardOffset * forwardFactor,                       -- dodge the B-pillar (or bucket seat/head rest)
-    verticalOffset * verticalFactor -- dodge the roof
+    shoulder.forwardOffset * forwardFactor,
+    shoulder.verticalOffset * verticalFactor
   )
 
   -- up/down head bobbing, to more easily discover occluded switches in the cockpit
@@ -367,6 +420,7 @@ function C:update(data)
   intermediateCamPos:set(push3(combinedPos) + self.seatPosition + rotationOffset)
   data.res.pos:setRotate(carRot, intermediateCamPos)
   data.res.pos:setAdd(carPos)
+  data.res.pos:setAdd(ref)
   data.res.rot:set(camRot)
 
   -- save fov/seat settings on timeout
@@ -378,7 +432,8 @@ function C:update(data)
     if type(vehConfigs) ~= "string" then vehConfigs = "{}" end
     vehConfigs = vehConfigs:gsub("'",'"') -- fix INI values that passed through javascript (e.g. when opening Options menu)
     vehConfigs = jsonDecode(vehConfigs) -- and then deserialize, so we can follow the user settings
-    vehConfigs[vehicleName] = vehConfig
+    local configKey = vehicleName .. "::" .. tostring(self.seatId or self.name or "occupant")
+    vehConfigs[configKey] = vehConfig
     settings.setValue('cameraDriverVehicleConfigs', jsonEncode(vehConfigs))
     settings.setValue('cameraDriverFov', self.manualzoom.fov)
     self.saveTimeout = nil
@@ -387,9 +442,10 @@ end
 
 function C:setRefNodes(centerNodeID, leftNodeID, backNodeID)
   self.refNodes = self.refNodes or {}
-  self.refNodes.ref = centerNodeID
-  self.refNodes.left = leftNodeID
-  self.refNodes.back = backNodeID
+  local attachedRefNodesAvailable = centerNodeID ~= nil and leftNodeID ~= nil and backNodeID ~= nil
+  self.refNodes.ref = attachedRefNodesAvailable and centerNodeID or self.idRefOccupant
+  self.refNodes.left = attachedRefNodesAvailable and leftNodeID or self.idLeftOccupant
+  self.refNodes.back = attachedRefNodesAvailable and backNodeID or self.idBackOccupant
 end
 
 function C:mouseLocked(locked)
