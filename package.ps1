@@ -43,7 +43,7 @@ $srcFolders = @(
 # Function to create zip file
 function Create-Zip($destinationPath) {
     try {
-        $files = $srcFolders | ForEach-Object { Join-Path -Path $scriptPath -ChildPath $_ }
+        $files = $srcFolders | ForEach-Object { Join-Path -Path $scriptPath -ChildPath $_ } | Where-Object { Test-Path $_ }
         Compress-Archive -Path $files -DestinationPath $destinationPath -CompressionLevel Optimal -Force
     } catch {
         Write-Host "An error occurred while creating the zip file: $_"

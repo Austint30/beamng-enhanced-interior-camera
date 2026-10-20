@@ -330,7 +330,7 @@ function C:update(data)
   end
 
   -- physics+static position combination
-  combinedPos:setLerp(self.camPosInitialLocal, camPosLocal, self:getEnhancedPhysicsFactor(cameraEffectFactor))
+  combinedPos:setLerp(self.camPosInitialLocal, camPosLocal, self:getEnhancedPhysicsFactor(data, cameraEffectFactor))
 
   -- left/right shoulder behavior
   local shoulder = self.camRot.x < 0 and self.shoulderLeft or self.shoulderRight

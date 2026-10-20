@@ -23,117 +23,17 @@ local profiler = require('core/enhancedoccupant/profiler')
 local steeringLookAhead = require('core/enhancedoccupant/steeringLookAhead')
 local tumbleDetection = require('core/enhancedoccupant/tumbleDetection')
 
--- BeamNG's core only injects per-seat occupant camera data (camNodeID, seatSide,
--- shoulder offsets, seat-specific ref nodes, ...) into instances of its built-in
--- multicam modes ('onboard', 'occupant'). Custom camera modes like this one are
--- constructed with an empty config, so the seat data has to be mirrored from the
--- occupant camera instance core built for the seat the player currently occupies.
--- Returns the best matching camera instance, or nil when nothing is available.
-local function findSeatCamera(vehId, player)
-  if not vehId or vehId == -1 or not core_camera or not core_camera.getCameraDataById then
-    return nil
-  end
-  local ctxId = core_camera.getContextIdForPlayer
-    and core_camera.getContextIdForPlayer(player) or nil
-  local cameras = core_camera.getCameraDataById(vehId, ctxId)
-  if not cameras then return nil end
+-- Mod logic for the Enhanced Interior Camera. This mod overrides the core
+-- 'occupant' camera mode (cameraModes/occupant.lua is a minimal-diff copy of
+-- the stock script), so core injects per-seat camera data into our instances
+-- exactly like it does for the vanilla camera. All enhanced features live here
+-- and are bypassed wholesale when the global effectsEnabled switch is off,
+-- restoring stock occupant camera behavior.
 
-  -- Preferred: the occupant camera of the seat this player is physically in.
-  local seatOcc = rawget(_G, 'gameplay_seatOccupants')
-  if seatOcc and seatOcc.getPlayerPresence then
-    local presence = seatOcc.getPlayerPresence(player or 0)
-    if presence and presence.vehicleId == vehId and presence.seatId then
-      local seatCam = cameras['occupant.' .. presence.seatId]
-      if seatCam then return seatCam end
-    end
-  end
-
-  -- No presence (unseated, or the seat system is unavailable): use the driver
-  -- seat's occupant camera if the vehicle has one.
-  for camName, cam in pairs(cameras) do
-    if camName:find('^occupant%.', 1) and cam.defaultPermissionMode == 'driver' then
-      return cam
-    end
-  end
-
-  -- Legacy vehicles without occupant slots: the 'driver' alias instance and the
-  -- 'onboard.driver' instance carry the JBeam driver-camera seat data.
-  if cameras.driver and cameras.driver.camNodeID then return cameras.driver end
-  if cameras['onboard.driver'] and cameras['onboard.driver'].camNodeID then
-    return cameras['onboard.driver']
-  end
-end
-
--- Seat label used for the camera-switch toast, mirroring core_camera's occupant
--- naming: displayName from JBeam, falling back to driver/passenger seat strings.
-local function getEnhancedSeatLabel(vehId, player)
-  local seatCam = findSeatCamera(vehId, player)
-  if not seatCam then return nil end
-  local isDriver = seatCam.defaultPermissionMode == 'driver'
-    or seatCam.seatId == 'driver'
-    or seatCam.name == 'driver'
-  return seatCam.displayName
-    or (isDriver and 'ui.gameplay.seatOccupants.driverSeat'
-      or 'ui.gameplay.seatOccupants.passengerSeat')
-end
-
--- Normalize camera UI events so enhancedoccupant looks like occupant to the UI.
--- Fixes cockpit UI showing when this camera is active.
-do
-  local gh = rawget(_G, 'guihooks')
-  if type(gh) == 'table' and type(gh.trigger) == 'function' and not gh._edc_wrapped then
-    local orig = gh.trigger
-    gh.trigger = function(evt, payload, ...)
-      -- onCameraNameChanged drives cockpit app hide/show
-      if evt == 'onCameraNameChanged' then
-        if type(payload) ~= 'table' then payload = { name = payload } end
-        if payload.name == 'enhancedoccupant' then
-          payload.name = 'occupant'
-        end
-        -- Options > Cameras and other UI consumers
-      elseif evt == 'CameraConfigChanged' and type(payload) == 'table' then
-        if payload.focusedCamName == 'enhancedoccupant' then
-          payload.focusedCamName = 'occupant'
-        end
-        -- Toast parity with the built-in occupant camera: core names its seat
-        -- cameras "Occupant Camera - <seat>", while this camera would otherwise
-        -- announce as the plain mode label. Swap the message for the occupant
-        -- variant with the current seat's name.
-      elseif evt == 'Message' and type(payload) == 'table'
-          and payload.txt == 'ui.camera.switched'
-          and type(payload.context) == 'table'
-          and payload.context.name == 'ui.camera.mode.enhancedoccupant' then
-        local veh = be and be.getPlayerVehicle and be:getPlayerVehicle(0)
-        local occupantName = veh and getEnhancedSeatLabel(veh:getId(), 0)
-        if occupantName then
-          payload.txt = 'ui.camera.switchedOccupant'
-          payload.context = { occupantName = occupantName }
-        end
-      end
-      return orig(evt, payload, ...)
-    end
-    gh._edc_wrapped = true
-  end
-end
-
--- Also normalize extensions.hook('onCameraModeChanged', camName)
-do
-  local ex = rawget(_G, 'extensions')
-  if type(ex) == 'table' and type(ex.hook) == 'function' and not ex._edc_cam_wrap then
-    local origHook = ex.hook
-    ex.hook = function(evt, ...)
-      if evt == 'onCameraModeChanged' then
-        local camName = select(1, ...)
-        if camName == 'enhancedoccupant' then
-          -- replace first arg and forward remaining args intact
-          return origHook(evt, 'occupant', select(2, ...))
-        end
-      end
-      return origHook(evt, ...)
-    end
-    ex._edc_cam_wrap = true
-  end
-end
+local shake = require('core/cameraModes/speedshake')
+local profiler = require('core/enhancedoccupant/profiler')
+local steeringLookAhead = require('core/enhancedoccupant/steeringLookAhead')
+local tumbleDetection = require('core/enhancedoccupant/tumbleDetection')
 
 local cameraEffectSuppressionDuration = 0.5
 local cameraEffectRecoveryRate = 8
@@ -175,6 +75,7 @@ local function initEnhancedOccupant(self)
   self.driftshake:init(vec3(0.3, 0.1, 0.1), vec3(5.0, 5.0, 5.0), true)
   self.hasResetted = false
 
+  self.effectsEnabled = true -- global master switch, overridden by saved settings
   self.defaultSettings = jsonReadFile('/lua/ge/extensions/core/cameraModes/enhancedoccupantDefaults.json')
   self.edcSettings = {}
   self:initEnhancedOccupantSettings()
@@ -192,8 +93,13 @@ end
 
 local function disableCockpitApps(self)
   if not self.disabledCockpitApps then
-    -- Disable cockpit gui apps
-    guihooks.trigger('onCameraNameChanged', { name = 'occupant' })
+    -- Re-evaluate cockpit gui app visibility. This camera IS the occupant
+    -- camera, but external UI events (menus opening/closing, session reloads)
+    -- can leave app state stale; re-trigger with the actual focused camera
+    -- name (e.g. 'occupant.driver') so the UI re-runs its cockpit checks.
+    local camName = core_camera and core_camera.getActiveCamName
+      and core_camera.getActiveCamName(0) or 'occupant'
+    guihooks.trigger('onCameraNameChanged', { name = camName })
     self.disabledCockpitApps = true
   end
 end
@@ -223,6 +129,7 @@ local function resetTransientCameraEffects(self)
 end
 
 local function suppressCameraEffects(self)
+  if not self.effectsEnabled then return end
   self.cameraEffectSuppressionTimer = cameraEffectSuppressionDuration
   self:resetTransientCameraEffects()
 end
@@ -257,6 +164,13 @@ local function loadSettingsPreset(self)
   local loadedSettings = settings.getValue('edcSettings')
 
   if loadedSettings then
+    if loadedSettings.effectsEnabled ~= nil then
+      -- Global toggle stored outside the presets so it applies to every
+      -- preset. Absent (older settings files) means enabled.
+      self.effectsEnabled = loadedSettings.effectsEnabled ~= false
+    else
+      self.effectsEnabled = true
+    end
     if loadedSettings.chosenPreset then
       edcSettings.chosenPreset = loadedSettings.chosenPreset
     end
@@ -326,6 +240,10 @@ local function resetEnhancedOccupant(self)
 end
 
 local function updateEnhancedFov(self, data, cameraEffectFactor, zoomSmoothed)
+  if not self.effectsEnabled then
+    data.res.fov = zoomSmoothed * 27 + (1 - zoomSmoothed) * self.manualzoom.fov
+    return
+  end
   profiler.start('FOVSpeedMod')
   self.currFov = data.res.fov
   if cameraEffectFactor <= 0 then
@@ -357,7 +275,10 @@ local function updateEnhancedFov(self, data, cameraEffectFactor, zoomSmoothed)
   profiler.stop('FOVSpeedMod')
 end
 
-local function getEnhancedPhysicsFactor(self, cameraEffectFactor)
+local function getEnhancedPhysicsFactor(self, data, cameraEffectFactor)
+  if not self.effectsEnabled then
+    return data.openxrSessionRunning and 0 or self.physicsFactor
+  end
   return self.physicsFactor * cameraEffectFactor
 end
 
@@ -369,7 +290,61 @@ local function endEnhancedPhysicsTransform(self)
   profiler.stop('PhysicsTransform')
 end
 
+-- Mirrors the stock occupant camera's rotation block verbatim (reference:
+-- cameraModes/occupant.lua), used when the global effects switch is off.
+local transitionStart = math.rad(50) -- full horizon lock within this margin
+local transitionEnd = math.rad(70) -- start fully following vehicle beyond this angle
+
+local function vanillaCameraRotation(self, data, carLeft, carFwd, carUp, carRot, camRot)
+  -- Smooth velocity using rock on a string algorithm
+  self.rockPos:set(push3(self.rockPos) - push3(data.vel) * data.dt)
+  projectedRockPos:setProjectToOriginPlane(carUp, self.rockPos)
+  projectedRockPos:resize(min(self.rockPos:length(), self.lookAheadSmoothness))
+  -- When vehicle flips, left and right sides of it flip aswell. To prevent this from happening
+  -- We tempereraly stop projecting the rock position
+  if self.rockPos:distance(projectedRockPos) < 0.1 then
+    self.rockPos:set(projectedRockPos)
+  else
+    self.rockPos:resize(min(self.rockPos:length(), self.lookAheadSmoothness))
+  end
+  -- Lock roll to horizon
+  carRot:setFromDir(carFwd, carUp)
+  camRot:setFromDir(-push3(carFwd))
+  camUp:setRotate(camRot, vecZ)
+  local carRoll = math.atan2(push3(camUp):dot(-push3(carLeft)), camUp:dot(carUp))
+  local carRollFactor = 1 - self.stableHorizonFactor * smootheststep(clamp(1.42 * carUp.z, 0, 1))
+  local camRoll = carRoll * carRollFactor
+
+  -- Look-ahead angle
+  self.fwdSpeed = lerp(self.fwdSpeed, -data.vel:length() * push3(data.vel):normalized():dot(carFwd), data.dt * (1.5 - self.lookAheadSmoothness))
+  nRockPos:set(push3(carFwd) * (1 - self.rockPos:length() / self.lookAheadSmoothness) + self.rockPos)
+  nRockPos:normalize()
+  local lookAheadAngle = data.openxrSessionRunning and 0 or self.lookAheadAngle -- disable LookAhead while in VR
+  local lookAheadAngleOffset = math.atan2(nRockPos.x * carFwd.y - nRockPos.y * carFwd.x, nRockPos.x * carFwd.x + nRockPos.y * carFwd.y)
+  self.rockPos:setScaled((1 - data.dt * 0.1) * clamp(self.fwdSpeed / 20, 0, 1))
+  lookAheadAngleOffset = clamp(lookAheadAngleOffset, -1.1, 1.1) * lookAheadAngle * clamp(self.fwdSpeed / 15, 0, 1)
+
+  -- Lock pitch to horizon
+  local flatFwdLen = math.sqrt(square(carFwd.x) + square(carFwd.y))
+  local carPitch = math.atan2(carFwd.z, flatFwdLen > 0 and flatFwdLen or 1e-12)
+  local carPitchFactor = self.stablePitchFactor * sign(carUp.z) * smootheststep(clamp((transitionEnd - abs(carPitch)) / (transitionEnd - transitionStart), 0, 1))
+  local camPitch = math.rad(self.camRot.y) - carPitch * carPitchFactor
+
+  camRot = rotateEuler(math.rad(self.camRot.x) + lookAheadAngleOffset, camPitch, camRoll, camRot) -- stable hood line
+
+  if data.openxrSessionRunning and self.openXRhorizonLockDriver then
+    local fwd = camRot * vecY
+    fwd.z = 0
+    fwd:normalize()
+    camRot:setFromDir(fwd, vecZ)
+  end
+end
+
 local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carLeft, carFwd, carUp, carRot, carRotInverse, camRot)
+  if not self.effectsEnabled then
+    vanillaCameraRotation(self, data, carLeft, carFwd, carUp, carRot, camRot)
+    return
+  end
   -- The camera looks along -carFwd, so its vehicle-relative pitch axis is -carLeft.
   -- Capture it before camera orientation smoothing modifies carLeft.
   forcePitchAxis:set(-push3(carLeft))
@@ -600,6 +575,7 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
 end
 
 local function updateEnhancedShakes(self, data, cameraEffectFactor, carRotInverse, carRot)
+  if not self.effectsEnabled then return end
   profiler.start('SpeedShake') -- Added speed-dependent shake effect (enhancedoccupant)
   local speedShakeStrength = cameraEffectFactor > 0 and self.speedshake:getShakeStrength(data) * cameraEffectFactor or 0
   self.speedshake:update(data, speedShakeStrength)
@@ -632,120 +608,17 @@ local function updateEnhancedShakes(self, data, cameraEffectFactor, carRotInvers
   profiler.frame(data.dt)
 end
 
--- Bind (or re-bind) the camera to the occupant seat core currently places the
--- player in. All seat-specific state lives on the built-in camera instance core
--- created for that seat, so mirror it onto this instance and re-anchor when the
--- seat changes.
---
--- Shoulder profile fallbacks, mirroring the base occupant camera defaults:
--- legacy vehicles without occupant slots have no profiles on their camera
--- instance, and the base update() indexes shoulder.startYaw unconditionally.
-local shoulderInteriorDefaults = {
-  startYaw = 70,
-  lateralOffset = 0.26,
-  forwardOffset = -0.075,
-  verticalOffset = -0.02,
-  forwardMultiplier = 1,
-  verticalMultiplier = 1,
-}
-
-local shoulderExteriorDefaults = {
-  startYaw = 70,
-  lateralOffset = 0.6,
-  forwardOffset = -0.3,
-  verticalOffset = -0.1,
-  forwardMultiplier = 1.75,
-  verticalMultiplier = 1,
-}
-
-local function resolveShoulder(side, seatSide, configured)
-  local exterior = side == seatSide and seatSide ~= 'center'
-  local profile = deepcopy(exterior and shoulderExteriorDefaults or shoulderInteriorDefaults)
-  tableMergeRecursive(profile, configured or {})
-  return profile
-end
-
-local function bindSeatCamera(self, data, seatCam)
-  local previous = self._boundSeatCam
-  local sameSeat = previous ~= nil and previous.seatId == (seatCam and seatCam.seatId)
-  self._boundSeatCam = seatCam
-
-  if seatCam then
-    local seatSide = seatCam.seatSide
-    if not seatSide and seatCam.rightHandCamera ~= nil then
-      -- Legacy onboard driver camera: rightHandCamera names the seat side.
-      seatSide = seatCam.rightHandCamera and 'right' or 'left'
-    end
-    seatSide = seatSide or 'center'
-    self.camNodeID = seatCam.camNodeID
-    self.seatId = seatCam.seatId
-    self.seatSide = seatSide
-    self.shoulderLeft = resolveShoulder('left', seatSide, seatCam.shoulderLeft)
-    self.shoulderRight = resolveShoulder('right', seatSide, seatCam.shoulderRight)
-    self.lookBack = seatCam.lookBack or { side = 'auto', yaw = 160 }
-    self.idRefOccupant = seatCam.idRefOccupant
-    self.idLeftOccupant = seatCam.idLeftOccupant
-    self.idBackOccupant = seatCam.idBackOccupant
-    self.occupantRefNodes = {
-      ref = seatCam.idRefOccupant,
-      left = seatCam.idLeftOccupant,
-      back = seatCam.idBackOccupant,
-    }
-    if seatCam.refNodes then
-      -- Copy the seat's ref node ids instead of sharing the table: the base
-      -- setRefNodes() mutates self.refNodes in place when core rebuilds the
-      -- vehicle cameras, and must not write through to the seat instance.
-      self.refNodes = self.refNodes or {}
-      self.refNodes.ref = seatCam.refNodes.ref
-      self.refNodes.left = seatCam.refNodes.left
-      self.refNodes.back = seatCam.refNodes.back
-    end
-  else
-    self.camNodeID = nil
-    self.seatId = nil
-    self.seatSide = 'center'
-    self.idRefOccupant = nil
-    self.idLeftOccupant = nil
-    self.idBackOccupant = nil
-    self.occupantRefNodes = { ref = nil, left = nil, back = nil }
-    self._seatBoundOnce = false
-  end
-
-  if sameSeat then return end
-  if seatCam then
-    -- Re-anchor: reload the seat position for the new seat key, re-capture the
-    -- static camera position and suppress transient effects during the jump.
-    self:onVehicleCameraConfigChanged()
-    -- Parity with the built-in camera: announce the seat when the binding
-    -- changes mid-session (the initial bind is already announced by core's own
-    -- focus toast).
-    if self._seatBoundOnce then
-      core_camera.displayCameraNameUI(data.player or 0)
-    end
-    self._seatBoundOnce = true
-  end
-end
-
-local function syncEnhancedSeat(self, data)
-  local vehId = data.veh and data.veh:getId()
-  local seatCam = findSeatCamera(vehId, data.player)
-  if seatCam then
-    -- Core forwards occupant detachment to its own seat cameras; mirror the flag
-    -- so this instance switches to the occupant ref nodes as well.
-    self.occupantDetached = seatCam.occupantDetached == true
-    if seatCam == self._boundSeatCam then return end
-  elseif self._boundSeatCam == nil then
+local function beginEnhancedUpdate(self, data)
+  -- With the global effects switch off this camera must behave exactly like
+  -- the stock occupant camera: skip the enhanced update bookkeeping entirely.
+  if not self.effectsEnabled then
+    self:disableCockpitApps()
     return
   end
-  bindSeatCamera(self, data, seatCam)
-end
 
-local function beginEnhancedUpdate(self, data)
   -- BeamNG marks vehicle rewinds and teleports in the supported camera data.
   -- Vehicle respawns/reloads also reach suppressCameraEffects through reset().
   if data.teleported then self:suppressCameraEffects() end
-
-  syncEnhancedSeat(self, data)
 
   self:disableCockpitApps()
 end

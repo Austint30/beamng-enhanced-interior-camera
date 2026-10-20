@@ -16,6 +16,22 @@
     </div>
 
     <template v-else>
+      <div class="setting-switch eic-master-switch">
+        <div class="setting-switch-copy">
+          <div class="setting-switch-label">Camera Effects</div>
+          <div class="setting-switch-description">
+            Enable all Enhanced Interior Camera motion effects. When disabled,
+            this behaves exactly like BeamNG's stock occupant camera.
+          </div>
+        </div>
+        <BngSwitch
+          class="setting-switch-control"
+          :model-value="effectsEnabled"
+          aria-label="Enable camera effects"
+          @update:model-value="value => toggleEffects(value)"
+        />
+      </div>
+
       <div class="preset-toolbar">
         <label class="preset-picker">
           <span>Preset</span>
@@ -491,6 +507,7 @@ const saveError = ref("")
 const saveStatus = ref("")
 const activeTab = ref(0)
 const chosenPreset = ref("Default")
+const effectsEnabled = ref(true)
 const presetName = ref("")
 const presets = reactive({})
 const activeValues = reactive({})
@@ -620,6 +637,11 @@ function selectPreset(name) {
   queueSave()
 }
 
+function toggleEffects(value) {
+  effectsEnabled.value = value === true
+  queueSave()
+}
+
 function displayValue(field) {
   const value = Number(activeValues[field.key])
   if (!Number.isFinite(value)) return 0
@@ -699,6 +721,8 @@ function settingsSnapshot() {
   return {
     chosenPreset: chosenPreset.value,
     presets: customPresets,
+    // Global master switch, stored outside the presets so it applies to all of them.
+    effectsEnabled: effectsEnabled.value,
   }
 }
 
@@ -732,6 +756,8 @@ async function loadSettings() {
 
     await gameSettings.waitForData()
     const stored = normalizeStoredSettings(gameSettings.getValue("edcSettings"))
+
+    effectsEnabled.value = stored?.effectsEnabled !== false
 
     replaceReactive(presets, clone(defaults.presets))
     if (stored?.presets && typeof stored.presets === "object") {
