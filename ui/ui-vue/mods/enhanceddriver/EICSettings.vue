@@ -26,6 +26,8 @@
         </div>
         <BngSwitch
           class="setting-switch-control"
+          bng-nav-item
+          tabindex="0"
           :model-value="effectsEnabled"
           aria-label="Enable camera effects"
           @update:model-value="value => toggleEffects(value)"
@@ -157,6 +159,8 @@
               </div>
               <BngSwitch
                 class="setting-switch-control"
+                bng-nav-item
+                tabindex="0"
                 :model-value="activeValues.steeringLookAheadPassengerSeats === true"
                 aria-label="Steering look-ahead in passenger seats"
                 @update:model-value="value => updateBooleanSetting('steeringLookAheadPassengerSeats', value)"
@@ -180,6 +184,8 @@
               </div>
               <BngSwitch
                 class="setting-switch-control"
+                bng-nav-item
+                tabindex="0"
                 :model-value="activeValues.disableHorizonLockWhileTumbling === true"
                 aria-label="Disable horizon lock while tumbling"
                 @update:model-value="value => updateBooleanSetting('disableHorizonLockWhileTumbling', value)"
