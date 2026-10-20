@@ -8,7 +8,7 @@
 local angularVelocityStart = math.rad(45)
 local angularVelocityFull = math.rad(180)
 local tumbleActivationDelay = 0.30
-local logTag = 'enhanceddriver.tumbleDetection'
+local logTag = 'enhancedoccupant.tumbleDetection'
 
 local C = {}
 C.__index = C

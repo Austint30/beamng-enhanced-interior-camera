@@ -1,7 +1,7 @@
--- Simple per-second section timing profiler for Enhanced Driver Camera
+-- Simple per-second section timing profiler for Enhanced Occupant Camera
 -- Measures wall clock (os.clock) duration between start/stop pairs and logs average ms per call every second.
 -- Usage:
---   local profiler = require('core/enhanceddriver/profiler')
+--   local profiler = require('core/enhancedoccupant/profiler')
 --   profiler.start('GForce')
 --   ... code ...
 --   profiler.stop('GForce')

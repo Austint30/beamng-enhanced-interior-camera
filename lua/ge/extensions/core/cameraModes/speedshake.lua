@@ -2,7 +2,7 @@
 -- If a copy of the bCDDL was not distributed with this
 -- file, You can obtain one at http://beamng.com/bCDDL-1.1.txt
 
-local perlin = require('core/enhanceddriver/perlin')
+local perlin = require('core/enhancedoccupant/perlin')
 local DEG2RAD = math.pi / 180
 
 -- LUT configuration

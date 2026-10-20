@@ -19,11 +19,11 @@ local function rotateEuler(x, y, z, q)
 end
 
 local shake = require('core/cameraModes/speedshake')
-local profiler = require('core/enhanceddriver/profiler')
-local steeringLookAhead = require('core/enhanceddriver/steeringLookAhead')
-local tumbleDetection = require('core/enhanceddriver/tumbleDetection')
+local profiler = require('core/enhancedoccupant/profiler')
+local steeringLookAhead = require('core/enhancedoccupant/steeringLookAhead')
+local tumbleDetection = require('core/enhancedoccupant/tumbleDetection')
 
--- Normalize camera UI events so enhanceddriver looks like driver to the UI.
+-- Normalize camera UI events so enhancedoccupant looks like occupant to the UI.
 -- Fixes cockpit UI showing when this camera is active.
 do
   local gh = rawget(_G, 'guihooks')
@@ -33,13 +33,13 @@ do
       -- onCameraNameChanged drives cockpit app hide/show
       if evt == 'onCameraNameChanged' then
         if type(payload) ~= 'table' then payload = { name = payload } end
-        if payload.name == 'enhanceddriver' then
-          payload.name = 'driver'
+        if payload.name == 'enhancedoccupant' then
+          payload.name = 'occupant'
         end
         -- Options > Cameras and other UI consumers
       elseif evt == 'CameraConfigChanged' and type(payload) == 'table' then
-        if payload.focusedCamName == 'enhanceddriver' then
-          payload.focusedCamName = 'driver'
+        if payload.focusedCamName == 'enhancedoccupant' then
+          payload.focusedCamName = 'occupant'
         end
       end
       return orig(evt, payload, ...)
@@ -56,9 +56,9 @@ do
     ex.hook = function(evt, ...)
       if evt == 'onCameraModeChanged' then
         local camName = select(1, ...)
-        if camName == 'enhanceddriver' then
+        if camName == 'enhancedoccupant' then
           -- replace first arg and forward remaining args intact
-          return origHook(evt, 'driver', select(2, ...))
+          return origHook(evt, 'occupant', select(2, ...))
         end
       end
       return origHook(evt, ...)
@@ -77,7 +77,7 @@ local attachedCamFwd, attachedCamUp = vec3(), vec3()
 local blendedCamFwd, blendedCamUp = vec3(), vec3()
 local nRockPos, projectedRockPos = vec3(), vec3()
 
-local function initEnhancedDriver(self)
+local function initEnhancedOccupant(self)
   self.steeringLookAhead = steeringLookAhead()
   self.tumbleDetection = tumbleDetection()
   self.gForceFwdSmoother = newTemporalSmoothingNonLinear(4, 4)
@@ -107,9 +107,9 @@ local function initEnhancedDriver(self)
   self.driftshake:init(vec3(0.3, 0.1, 0.1), vec3(5.0, 5.0, 5.0), true)
   self.hasResetted = false
 
-  self.defaultSettings = jsonReadFile('/lua/ge/extensions/core/cameraModes/enhanceddriverDefaults.json')
+  self.defaultSettings = jsonReadFile('/lua/ge/extensions/core/cameraModes/enhancedoccupantDefaults.json')
   self.edcSettings = {}
-  self:initEnhancedDriverSettings()
+  self:initEnhancedOccupantSettings()
 
   self.lastCarFwd = vec3()
   self.lastCarLeft = vec3()
@@ -125,12 +125,12 @@ end
 local function disableCockpitApps(self)
   if not self.disabledCockpitApps then
     -- Disable cockpit gui apps
-    guihooks.trigger('onCameraNameChanged', { name = 'driver' })
+    guihooks.trigger('onCameraNameChanged', { name = 'occupant' })
     self.disabledCockpitApps = true
   end
 end
 
-local function initEnhancedDriverSettings(self)
+local function initEnhancedOccupantSettings(self)
   for k, v in pairs(self.defaultSettings.presets['Default']) do
     self.edcSettings[k] = v
   end
@@ -174,7 +174,7 @@ local function onEnhancedVehicleCameraConfigChanged(self)
 end
 
 local function loadSettingsPreset(self)
-  profiler.start('LoadPreset') -- enhanceddriver: dynamic preset merge
+  profiler.start('LoadPreset') -- enhancedoccupant: dynamic preset merge
   local defaultPresets = {
     ['Default'] = true,
     ['Lookahead'] = true,
@@ -252,7 +252,7 @@ local function getSettingsValue(self, key, fallback)
   return self.edcSettings[key]
 end
 
-local function resetEnhancedDriver(self)
+local function resetEnhancedOccupant(self)
   self.steeringLookAhead:invalidateRegistration()
   self:suppressCameraEffects()
 end
@@ -319,7 +319,7 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
   -- When vehicle flips, left and right sides of it flip aswell. To prevent this from happening
   -- We tempereraly stop projecting the rock position
   if self.rockPos:distance(projectedRockPos) < 0.1 then
-    self.rockPos = projectedRockPos
+    self.rockPos:set(projectedRockPos)
   else
     self.rockPos:resize(min(self.rockPos:length(), self.lookAheadSmoothness))
   end
@@ -375,7 +375,7 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
   steeringLookAheadAngleOffset = steeringLookAheadAngleOffset * cameraEffectFactor
 
   -- Rotate the camera in response to longitudinal, lateral, and vertical g-forces.
-  profiler.start('GForce') -- Added g-force smoothing and rotation blending (enhanceddriver)
+  profiler.start('GForce') -- Added g-force smoothing and rotation blending (enhancedoccupant)
   local rawFwdForce, rawSideForce, rawUpForce = 0, 0, 0
   if cameraEffectFactor > 0 and data.dt > 1e-6 then
     local accel = carRotInverse * data.vel - carRotInverse * data.prevVel
@@ -532,14 +532,14 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
 end
 
 local function updateEnhancedShakes(self, data, cameraEffectFactor, carRotInverse, carRot)
-  profiler.start('SpeedShake') -- Added speed-dependent shake effect (enhanceddriver)
+  profiler.start('SpeedShake') -- Added speed-dependent shake effect (enhancedoccupant)
   local speedShakeStrength = cameraEffectFactor > 0 and self.speedshake:getShakeStrength(data) * cameraEffectFactor or 0
   self.speedshake:update(data, speedShakeStrength)
   profiler.stop('SpeedShake')
 
   -- Detect angle of drift and apply camera shake
   -- (Is it possible to do apply this with wheel slip instead?)
-  profiler.start('DriftShake') -- Added drift angle shake effect (enhanceddriver)
+  profiler.start('DriftShake') -- Added drift angle shake effect (enhancedoccupant)
   local driftAngle = 0
   if cameraEffectFactor > 0 then
     local flatVelocity = carRotInverse * data.vel
@@ -575,10 +575,10 @@ end
 local M = {}
 
 function M.install(C)
-  C.initEnhancedDriver = initEnhancedDriver
+  C.initEnhancedOccupant = initEnhancedOccupant
   C.onEnhancedCameraChanged = onEnhancedCameraChanged
   C.disableCockpitApps = disableCockpitApps
-  C.initEnhancedDriverSettings = initEnhancedDriverSettings
+  C.initEnhancedOccupantSettings = initEnhancedOccupantSettings
   C.resetTransientCameraEffects = resetTransientCameraEffects
   C.suppressCameraEffects = suppressCameraEffects
   C.updateCameraEffectFactor = updateCameraEffectFactor
@@ -586,7 +586,7 @@ function M.install(C)
   C.loadSettingsPreset = loadSettingsPreset
   C.onEnhancedSettingsChanged = onEnhancedSettingsChanged
   C.getSettingsValue = getSettingsValue
-  C.resetEnhancedDriver = resetEnhancedDriver
+  C.resetEnhancedOccupant = resetEnhancedOccupant
   C.updateEnhancedFov = updateEnhancedFov
   C.getEnhancedPhysicsFactor = getEnhancedPhysicsFactor
   C.beginEnhancedPhysicsTransform = beginEnhancedPhysicsTransform

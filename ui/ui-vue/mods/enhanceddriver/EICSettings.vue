@@ -196,7 +196,7 @@ import { runRaw } from "@/bridge/libs/Lua.js"
 import { useSettings } from "@/services/settings"
 import SettingSlider from "./SettingSlider.vue"
 
-const DEFAULT_SETTINGS_PATH = "/lua/ge/extensions/core/cameraModes/enhanceddriverDefaults.json"
+const DEFAULT_SETTINGS_PATH = "/lua/ge/extensions/core/cameraModes/enhancedoccupantDefaults.json"
 const DEFAULT_PRESETS = [
   "Default",
   "Lookahead",
