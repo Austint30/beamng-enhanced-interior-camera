@@ -176,6 +176,14 @@
               description="Gradually attaches the camera to the vehicle when the vehicle starts tumbling."
               @update:model-value="value => updateBooleanSetting('disableHorizonLockWhileTumbling', value)"
             />
+
+            <h3>Arcade Chase Camera DEMO</h3>
+            <SettingSwitch
+              :model-value="arcadeChaseEnabled"
+              label="Enable Arcade Chase Camera"
+              description="Enables the work-in-progress Arcade Chase Camera mode. This will be coming soon in an upcoming major update."
+              @update:model-value="toggleArcadeChase"
+            />
           </div>
         </div>
       </BngTabs>
@@ -202,6 +210,7 @@ import { useSettings } from "@/services/settings"
 import { openConfirmation, openPrompt } from "@/services/popup"
 import SettingSlider from "./SettingSlider.vue"
 import SettingSwitch from "./SettingSwitch.vue"
+import { setArcadeChaseEnabled } from "./arcadeChaseDemo.js"
 
 const DEFAULT_SETTINGS_PATH = "/lua/ge/extensions/core/cameraModes/enhancedoccupantDefaults.json"
 const DEFAULT_PRESETS = [
@@ -507,6 +516,7 @@ const saveStatus = ref("")
 const activeTab = ref(0)
 const chosenPreset = ref("Default")
 const effectsEnabled = ref(true)
+const arcadeChaseEnabled = ref(false)
 const presets = reactive({})
 const activeValues = reactive({})
 
@@ -633,6 +643,12 @@ function selectPreset(name) {
 function toggleEffects(value) {
   effectsEnabled.value = value === true
   queueSave()
+}
+
+function toggleArcadeChase(value) {
+  arcadeChaseEnabled.value = value === true
+  queueSave()
+  void setArcadeChaseEnabled(arcadeChaseEnabled.value)
 }
 
 function displayValue(field) {
@@ -783,6 +799,7 @@ function settingsSnapshot() {
     presets: customPresets,
     // Global master switch, stored outside the presets so it applies to all of them.
     effectsEnabled: effectsEnabled.value,
+    arcadeChaseEnabled: arcadeChaseEnabled.value,
   }
 }
 
@@ -818,6 +835,7 @@ async function loadSettings() {
     const stored = normalizeStoredSettings(gameSettings.getValue("edcSettings"))
 
     effectsEnabled.value = stored?.effectsEnabled !== false
+    arcadeChaseEnabled.value = stored?.arcadeChaseEnabled === true
 
     replaceReactive(presets, clone(defaults.presets))
     if (stored?.presets && typeof stored.presets === "object") {
@@ -831,6 +849,9 @@ async function loadSettings() {
         ? stored.chosenPreset
         : defaults.chosenPreset || "Default"
     loadActivePreset(initialPreset)
+
+    // Keep the hidden Arcade Chase Camera demo in sync with the saved toggle.
+    void setArcadeChaseEnabled(arcadeChaseEnabled.value)
   } catch (error) {
     loadError.value = `Unable to load Enhanced Interior Camera settings: ${
       error?.message || error

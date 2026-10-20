@@ -1,4 +1,5 @@
 import { lua } from "@/bridge"
+import { syncArcadeChaseFromSettings, unregisterArcadeChaseButton } from "./arcadeChaseDemo.js"
 
 const BUTTON_ID = "enhanceddriver.eic-settings"
 const COMPONENT_PATH = "/ui/ui-vue/mods/enhanceddriver/EICSettings.vue"
@@ -15,6 +16,10 @@ export async function onLoad() {
   if (!result?.success) {
     console.error("[Enhanced Driver] Failed to register the EIC pause-menu button", result?.reason)
   }
+
+  // The arcade chase camera is a hidden demo: only expose its page and camera
+  // when the persisted EIC setting says it is enabled.
+  await syncArcadeChaseFromSettings()
 }
 
 export async function onUnload() {
@@ -23,4 +28,6 @@ export async function onUnload() {
   if (!result?.success && result?.reason !== "not_found") {
     console.error("[Enhanced Driver] Failed to unregister the EIC pause-menu button", result?.reason)
   }
+
+  await unregisterArcadeChaseButton()
 }
