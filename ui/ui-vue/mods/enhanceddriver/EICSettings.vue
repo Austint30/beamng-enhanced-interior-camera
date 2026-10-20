@@ -42,15 +42,16 @@
             Save as preset…
           </BngButton>
           <BngButton
+            v-if="canRenamePreset"
             bng-nav-item
             :accent="ACCENTS.text"
-            :disabled="!canRenamePreset"
             @click="openRenamePrompt"
           >
             Rename preset…
           </BngButton>
           <BngButton
             bng-nav-item
+            :bng-no-nav="canDeletePreset ? null : 'true'"
             :accent="ACCENTS.destructive"
             :disabled="!canDeletePreset"
             @click="deletePreset"
