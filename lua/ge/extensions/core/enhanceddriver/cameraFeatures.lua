@@ -45,8 +45,6 @@ do
       return orig(evt, payload, ...)
     end
     gh._edc_wrapped = true
-  else
-    log("E", "guihooks.trigger", "Unable to install UI normalizer (guihooks missing or already wrapped)")
   end
 end
 
@@ -66,8 +64,6 @@ do
       return origHook(evt, ...)
     end
     ex._edc_cam_wrap = true
-  else
-    log("E", "extensions.hook", "Unable to install normalizer (extensions.hook missing or already wrapped)")
   end
 end
 
@@ -120,14 +116,10 @@ local function initEnhancedDriver(self)
   self.currFov = 0
   self.lastSmoothRate = 0
   self.disabledCockpitApps = false
-  -- Keep-alive to reassert cockpit UI state after external toggles (UI close, BeamMP, etc.)
-  self._uiKeepAliveTimer = 0
 end
 
 local function onEnhancedCameraChanged(self)
   self.disabledCockpitApps = false
-  -- force immediate reassert next frame after any camera change
-  self._uiKeepAliveTimer = 0
 end
 
 local function disableCockpitApps(self)
@@ -467,11 +459,11 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
   local sideImpactYawAngleFromForces = math.atan2(
     smoothedSideForce * self.gForceSideYawBase * self:getSettingsValue('gForceSideYaw'),
     1
-  ) * gForceTumbleFactor
+  )
   local sideImpactRollAngleFromForces = math.atan2(
     -smoothedSideForce * self.gForceSideRollBase * self:getSettingsValue('gForceSideRoll'),
     1
-  ) * gForceTumbleFactor
+  )
   -- Impact roll follows the inertial head yank; lean-in roll follows the applied lateral force.
   local sideLeanRollAngleFromForces = math.atan2(
     smoothedSideLeanForce * self.gForceSideLeanRollBase * self:getSettingsValue('gForceSideLeanRoll', 0),
@@ -485,7 +477,7 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
     scaledFwdForce = smoothedFwdForce * self.gForceYBase * self:getSettingsValue('gForceDecel')
   end
 
-  local pitchAngleFromForces = -math.atan2(scaledUpForce + scaledFwdForce, 1) * gForceTumbleFactor
+  local pitchAngleFromForces = -math.atan2(scaledUpForce + scaledFwdForce, 1)
 
   local horizonPitchOffset = lerp(0, camPitch, pitchHorizonLock)
 
@@ -576,15 +568,6 @@ local function beginEnhancedUpdate(self, data)
   -- BeamNG marks vehicle rewinds and teleports in the supported camera data.
   -- Vehicle respawns/reloads also reach suppressCameraEffects through reset().
   if data.teleported then self:suppressCameraEffects() end
-
-  -- Reassert cockpit-hide periodically while this camera is active
-  profiler.start('UIKeepAlive') -- enhanceddriver: periodic UI reassert
-  self._uiKeepAliveTimer = (self._uiKeepAliveTimer or 0) - data.dt
-  if self._uiKeepAliveTimer <= 0 then
-    guihooks.trigger('onCameraNameChanged', { name = 'driver' })
-    self._uiKeepAliveTimer = 0.5 -- every 0.5s while active
-  end
-  profiler.stop('UIKeepAlive')
 
   self:disableCockpitApps()
 end
