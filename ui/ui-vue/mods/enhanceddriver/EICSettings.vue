@@ -26,16 +26,17 @@
       <div class="preset-toolbar">
         <BngRow class="preset-row" label="Preset">
           <BngSmartSelect
-            :model-value="chosenPreset"
+            v-model="chosenPreset"
             :items="presetItems"
             :type="presetItems.length >= 12 ? 'dropdown' : 'select'"
-            @change="selectPreset"
+            @update:model-value="selectPreset"
           />
         </BngRow>
 
-        <div v-if="canDeletePreset" class="preset-actions">
+        <div class="preset-actions">
           <BngButton
             :accent="ACCENTS.destructive"
+            :disabled="!canDeletePreset"
             @click="deletePreset"
           >
             Delete preset
