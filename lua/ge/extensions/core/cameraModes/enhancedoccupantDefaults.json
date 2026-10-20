@@ -31,7 +31,8 @@
       "lockPitchToHorizon": 0,
       "lockRollToHorizon": 0,
       "pitchSmoothing": 0.75,
-      "rollSmoothing": 0.75
+      "rollSmoothing": 0.75,
+      "yawSmoothing": 0.1
     },
     "Lookahead": {
       "disableHorizonLockWhileTumbling": true,
@@ -63,7 +64,8 @@
       "lockPitchToHorizon": 0,
       "lockRollToHorizon": 0,
       "pitchSmoothing": 0.75,
-      "rollSmoothing": 0.75
+      "rollSmoothing": 0.75,
+      "yawSmoothing": 0.1
     },
     "Intense": {
       "disableHorizonLockWhileTumbling": true,
@@ -95,7 +97,8 @@
       "lockPitchToHorizon": 0,
       "lockRollToHorizon": 0,
       "pitchSmoothing": 0.75,
-      "rollSmoothing": 0.75
+      "rollSmoothing": 0.75,
+      "yawSmoothing": 0.1
     },
     "Smooth": {
       "disableHorizonLockWhileTumbling": true,
@@ -127,7 +130,8 @@
       "lockPitchToHorizon": 0,
       "lockRollToHorizon": 0,
       "pitchSmoothing": 0.5,
-      "rollSmoothing": 0.5
+      "rollSmoothing": 0.5,
+      "yawSmoothing": 0.1
     },
     "VR (Comfort)": {
       "disableHorizonLockWhileTumbling": true,
@@ -159,7 +163,8 @@
       "lockPitchToHorizon": 1,
       "lockRollToHorizon": 1,
       "pitchSmoothing": 0,
-      "rollSmoothing": 0
+      "rollSmoothing": 0,
+      "yawSmoothing": 0
     },
     "VR (Thrill)": {
       "driftShakeAmp": 0,
@@ -187,6 +192,7 @@
       "disableHorizonLockWhileTumbling": true,
       "pitchSmoothing": 0.65,
       "rollSmoothing": 0.78,
+      "yawSmoothing": 0.1,
       "speedShakeAmp": 0,
       "speedShakeDetail": 3,
       "speedShakeFreq": 0,

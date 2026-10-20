@@ -147,7 +147,7 @@
               @update:model-value="value => updateSetting(field, value)"
             />
 
-            <h3>Pitch and Roll</h3>
+            <h3>Pitch, Roll, Yaw</h3>
             <SettingSlider
               v-for="field in otherFields"
               :key="field.key"
@@ -477,6 +477,14 @@ const otherFields = [
     key: "rollSmoothing",
     label: "Roll Smoothing",
     description: "Smoothing of roll movement caused by bumps.",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  {
+    key: "yawSmoothing",
+    label: "Yaw Smoothing",
+    description: "Smoothing of heading movement caused by quick turns and impacts.",
     min: 0,
     max: 1,
     step: 0.01,

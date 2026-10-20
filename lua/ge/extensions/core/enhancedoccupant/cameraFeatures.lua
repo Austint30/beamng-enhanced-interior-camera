@@ -82,6 +82,7 @@ local function initEnhancedOccupant(self)
 
   self.lastCarFwd = vec3()
   self.lastCarLeft = vec3()
+  self.lastCarHeading = vec3()
   self.currFov = 0
   self.lastSmoothRate = 0
   self.disabledCockpitApps = false
@@ -383,6 +384,17 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
   local lerpedCarLeft = lerp(self.lastCarLeft, carLeft, rollFollowFactor)
   carLeft.z = lerpedCarLeft.z
   self.lastCarLeft:set(carLeft)
+
+  -- Smooth car heading (yaw) by damping the horizontal components of carFwd,
+  -- mirroring the vertical-only pitch and roll smoothing above. Re-normalize
+  -- after replacing x/y so the smoothed vector stays unit length.
+  local yawSmoothingFactor = (1 - self:getSettingsValue('yawSmoothing', 0)) * data.dt * 20
+  local yawFollowFactor = lerp(1, yawSmoothingFactor, gForceTumbleFactor)
+  yawFollowFactor = lerp(1, yawFollowFactor, cameraEffectFactor)
+  carFwd.x = lerp(self.lastCarHeading.x, carFwd.x, yawFollowFactor)
+  carFwd.y = lerp(self.lastCarHeading.y, carFwd.y, yawFollowFactor)
+  if carFwd:squaredLength() > 1e-8 then carFwd:normalize() end
+  self.lastCarHeading:set(carFwd)
 
   -- Stable horizon
   carRot:setFromDir(carFwd, carUp)
