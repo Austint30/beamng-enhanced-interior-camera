@@ -38,6 +38,13 @@ local tumbleDetection = require('core/enhancedoccupant/tumbleDetection')
 local cameraEffectSuppressionDuration = 0.5
 local cameraEffectRecoveryRate = 8
 
+-- Freeze protection: a temporary hitch (below ~5 FPS) turns the frame delta
+-- into a huge multiplier on every smoother and per-frame integration in the
+-- camera effects, making them overshoot wildly. Effects consume at most this
+-- much simulated time per update; core recomputes data.dt each frame, so the
+-- clamp only lasts for the duration of the stall.
+local maxEffectsDeltaTime = 1 / 5
+
 local forcePitchAxis, forcePitchRot = vec3(), quat()
 local camUp, attachedCamRot = vec3(), quat()
 local normalCamFwd, normalCamUp = vec3(), vec3()
@@ -363,7 +370,11 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
   -- The camera looks along -carFwd, so its vehicle-relative pitch axis is -carLeft.
   -- Capture it before camera orientation smoothing modifies carLeft.
   forcePitchAxis:set(-push3(carLeft))
-  local detectedTumbleFactor = self.tumbleDetection:getGForceFactor(carUp, data.dt)
+  -- Rate-based measurement: tumble angular velocity divides an angle change
+  -- by dt, so it needs the true frame delta like the g-force divisor; using
+  -- the clamped delta would inflate the velocity into a false tumble on
+  -- hitch frames.
+  local detectedTumbleFactor = self.tumbleDetection:getGForceFactor(carUp, self.rawFrameDelta or data.dt)
   local gForceTumbleFactor = lerp(1, detectedTumbleFactor, cameraEffectFactor)
 
   local attachToCarWhileTumbling = self:getSettingsValue('disableHorizonLockWhileTumbling', false)
@@ -461,10 +472,14 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
     accel.y = self.velSmootherY:get(accel.y, data.dt)
     accel.z = self.velSmootherZ:get(accel.z, data.dt)
 
-    rawFwdForce = -accel.y / (data.dt * 100) * cameraEffectFactor
+    -- Divide by the true frame delta (see beginEnhancedUpdate): accel holds
+    -- the velocity change accumulated across the whole hitch, so clamping
+    -- this divisor would scale the force spike with the stall length.
+    local forceDelta = self.rawFrameDelta or data.dt
+    rawFwdForce = -accel.y / (forceDelta * 100) * cameraEffectFactor
     -- Vehicle-space +X points left, while positive camera yaw looks right.
-    rawSideForce = accel.x / (data.dt * 100) * cameraEffectFactor
-    rawUpForce = -accel.z / (data.dt * 100) * cameraEffectFactor
+    rawSideForce = accel.x / (forceDelta * 100) * cameraEffectFactor
+    rawUpForce = -accel.z / (forceDelta * 100) * cameraEffectFactor
   end
 
   -- Reduce impact of braking being detected as upward acceleration
@@ -647,6 +662,18 @@ local function beginEnhancedUpdate(self, data)
   if not self.effectsEnabled then
     self:disableCockpitApps()
     return
+  end
+
+  -- Clamp hitch-sized frame deltas so dt-multiplied smoothers and
+  -- integrations stay bounded. Keep the true delta around for one frame:
+  -- g-force acceleration divides the velocity change between samples by dt,
+  -- and clamping that divisor would inflate the forces exactly as badly as
+  -- the stall inflates the smoothers.
+  if data.dt > maxEffectsDeltaTime then
+    self.rawFrameDelta = data.dt
+    data.dt = maxEffectsDeltaTime
+  else
+    self.rawFrameDelta = nil
   end
 
   -- BeamNG marks vehicle rewinds and teleports in the supported camera data.
