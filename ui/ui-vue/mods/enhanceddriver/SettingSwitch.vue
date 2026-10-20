@@ -41,6 +41,13 @@ const emit = defineEmits(["update:modelValue"])
 <style scoped lang="scss">
 .setting-row {
   --bng-row-breakpoint: 38%;
+  // Match core settings toggles (OptionsCheckbox uses 1.1em; BngSwitch's
+  // inline default is a much smaller 0.75em). Set on the row root and let it
+  // inherit to the SwitchToggle, instead of depending on the toggle's
+  // internal class name.
+  --bng-switch-toggle-size: 1.1em;
+  --bng-switch-toggle-radius: 2em;
+  --bng-switch-toggle-knob-radius: 50%;
 }
 
 .setting-copy {
