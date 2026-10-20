@@ -16,42 +16,31 @@
     </div>
 
     <template v-else>
-      <div class="setting-switch eic-master-switch">
-        <div class="setting-switch-copy">
-          <div class="setting-switch-label">Camera Effects</div>
-          <div class="setting-switch-description">
-            Enable all Enhanced Interior Camera motion effects. When disabled,
-            this behaves exactly like BeamNG's stock occupant camera.
-          </div>
-        </div>
-        <BngSwitch
-          class="setting-switch-control"
-          bng-nav-item
-          tabindex="0"
-          :model-value="effectsEnabled"
-          aria-label="Enable camera effects"
-          @update:model-value="value => toggleEffects(value)"
-        />
-      </div>
+      <SettingSwitch
+        :model-value="effectsEnabled"
+        label="Camera Effects"
+        description="Enable all Enhanced Interior Camera motion effects. When disabled, this behaves exactly like BeamNG's stock occupant camera."
+        @update:model-value="toggleEffects"
+      />
 
       <div class="preset-toolbar">
-        <label class="preset-picker">
-          <span>Preset</span>
+        <BngRow class="preset-row" label="Preset">
           <BngDropdown
             :model-value="chosenPreset"
             :items="presetItems"
             long-names="wrap"
             @update:model-value="selectPreset"
           />
-        </label>
+        </BngRow>
 
-        <BngButton
-          v-if="canDeletePreset"
-          :accent="ACCENTS.destructive"
-          @click="deletePreset"
-        >
-          Delete preset
-        </BngButton>
+        <div v-if="canDeletePreset" class="preset-actions">
+          <BngButton
+            :accent="ACCENTS.destructive"
+            @click="deletePreset"
+          >
+            Delete preset
+          </BngButton>
+        </div>
       </div>
 
       <BngTabs
@@ -148,24 +137,12 @@
               :model-value="displayValue(field)"
               @update:model-value="value => updateSetting(field, value)"
             />
-            <div class="setting-switch">
-              <div class="setting-switch-copy">
-                <div class="setting-switch-label">Steering Look-Ahead in Passenger Seats</div>
-                <div class="setting-switch-description">
-                  When enabled, steering look-ahead also applies while seated in a
-                  passenger seat. When disabled, only the driver's seat follows the
-                  steering input.
-                </div>
-              </div>
-              <BngSwitch
-                class="setting-switch-control"
-                bng-nav-item
-                tabindex="0"
-                :model-value="activeValues.steeringLookAheadPassengerSeats === true"
-                aria-label="Steering look-ahead in passenger seats"
-                @update:model-value="value => updateBooleanSetting('steeringLookAheadPassengerSeats', value)"
-              />
-            </div>
+            <SettingSwitch
+              :model-value="activeValues.steeringLookAheadPassengerSeats === true"
+              label="Steering Look-Ahead in Passenger Seats"
+              description="When enabled, steering look-ahead also applies while seated in a passenger seat. When disabled, only the driver's seat follows the steering input."
+              @update:model-value="value => updateBooleanSetting('steeringLookAheadPassengerSeats', value)"
+            />
 
             <h3>Pitch, Roll, Yaw</h3>
             <SettingSlider
@@ -175,22 +152,12 @@
               :model-value="displayValue(field)"
               @update:model-value="value => updateSetting(field, value)"
             />
-            <div class="setting-switch">
-              <div class="setting-switch-copy">
-                <div class="setting-switch-label">Disable Horizon Lock While Tumbling</div>
-                <div class="setting-switch-description">
-                  Gradually attaches the camera to the vehicle when the vehicle starts tumbling.
-                </div>
-              </div>
-              <BngSwitch
-                class="setting-switch-control"
-                bng-nav-item
-                tabindex="0"
-                :model-value="activeValues.disableHorizonLockWhileTumbling === true"
-                aria-label="Disable horizon lock while tumbling"
-                @update:model-value="value => updateBooleanSetting('disableHorizonLockWhileTumbling', value)"
-              />
-            </div>
+            <SettingSwitch
+              :model-value="activeValues.disableHorizonLockWhileTumbling === true"
+              label="Disable Horizon Lock While Tumbling"
+              description="Gradually attaches the camera to the vehicle when the vehicle starts tumbling."
+              @update:model-value="value => updateBooleanSetting('disableHorizonLockWhileTumbling', value)"
+            />
           </div>
         </div>
       </BngTabs>
@@ -225,7 +192,7 @@ import {
   BngDropdown,
   BngIcon,
   BngInput,
-  BngSwitch,
+  BngRow,
   BngTabs,
   icons,
 } from "@/common/components/base"
@@ -233,6 +200,7 @@ import { lua } from "@/bridge"
 import { runRaw } from "@/bridge/libs/Lua.js"
 import { useSettings } from "@/services/settings"
 import SettingSlider from "./SettingSlider.vue"
+import SettingSwitch from "./SettingSwitch.vue"
 
 const DEFAULT_SETTINGS_PATH = "/lua/ge/extensions/core/cameraModes/enhancedoccupantDefaults.json"
 const DEFAULT_PRESETS = [
@@ -819,7 +787,7 @@ void loadSettings()
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  gap: 0.75rem;
+  gap: 0.45rem;
   color: var(--bng-off-white);
 }
 
@@ -828,16 +796,17 @@ void loadSettings()
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.25rem 0.3rem;
+  padding: 0.35rem 0.5rem 0.1rem;
 
   h2 {
     margin: 0;
-    font-size: 1.45rem;
+    font-size: 1.25rem;
   }
 
   p {
-    margin: 0.15rem 0 0;
+    margin: 0.1rem 0 0;
     color: rgba(var(--bng-off-white-rgb), 0.72);
+    font-size: 0.82rem;
   }
 }
 
@@ -867,26 +836,20 @@ void loadSettings()
 
 .preset-toolbar {
   display: flex;
-  align-items: flex-end;
-  gap: 0.75rem;
-  padding: 0.7rem 0.8rem;
-  border-radius: var(--bng-corners-1);
-  background: rgba(var(--bng-cool-gray-700-rgb), 0.42);
-}
-
-.preset-picker {
-  display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
   gap: 0.25rem;
-  min-width: 12rem;
 
-  > span {
-    color: rgba(var(--bng-off-white-rgb), 0.72);
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-transform: uppercase;
+  .preset-row {
+    --bng-row-breakpoint: 25%;
   }
+}
+
+.preset-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-right: 0.5rem;
+
+  .bng-button { margin: 0; }
 }
 
 .settings-tabs {
@@ -898,89 +861,59 @@ void loadSettings()
 .settings-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.3rem;
   max-width: 100%;
   overflow-x: hidden;
-  padding: 0.8rem;
+  padding: 0.4rem 0.5rem;
 
   h3 {
-    margin: 0.3rem 0 0.1rem;
-    padding-bottom: 0.25rem;
+    margin: 0.2rem 0 0.05rem;
+    padding-bottom: 0.15rem;
     border-bottom: 0.1rem solid rgba(var(--bng-orange-500-rgb), 0.75);
     color: var(--bng-off-white);
-    font-size: 1.05rem;
+    font-size: 0.95rem;
   }
 }
 
 .settings-notice {
   display: flex;
   align-items: flex-start;
-  gap: 0.65rem;
-  padding: 0.7rem 0.8rem;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
   border: 1px solid var(--bng-orange-500);
   border-radius: var(--bng-corners-1);
   background: rgba(var(--bng-orange-500-rgb), 0.12);
-  line-height: 1.3;
+  line-height: 1.25;
 
   > .settings-notice-icon {
     flex: 0 0 auto;
     color: var(--bng-orange-500);
-    font-size: 1.4rem;
+    font-size: 1.25rem;
   }
 
   > div {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: 0.1rem;
   }
 
   strong {
+    font-size: 0.85rem;
     font-weight: 700;
   }
 
   span {
     color: rgba(var(--bng-off-white-rgb), 0.82);
-    font-size: 0.86rem;
+    font-size: 0.78rem;
   }
-}
-
-.setting-switch {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.65rem 0.8rem;
-  border-radius: var(--bng-corners-1);
-  background: rgba(var(--bng-cool-gray-700-rgb), 0.26);
-}
-
-.setting-switch-copy {
-  min-width: 0;
-}
-
-.setting-switch-label {
-  color: var(--bng-off-white);
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.setting-switch-description {
-  margin-top: 0.15rem;
-  color: rgba(var(--bng-off-white-rgb), 0.68);
-  font-size: 0.82rem;
-  line-height: 1.25;
-}
-
-.setting-switch-control {
-  flex: 0 0 auto;
 }
 
 .create-preset {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) auto;
+  grid-template-columns: minmax(10rem, 1fr) auto;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.65rem 0.8rem;
+  gap: 0.4rem;
+  padding: 0.45rem 0.65rem;
   border-radius: var(--bng-corners-1);
   background: rgba(var(--bng-cool-gray-700-rgb), 0.42);
 }
@@ -996,8 +929,7 @@ void loadSettings()
 }
 
 @media (max-width: 58rem) {
-  .eic-header,
-  .preset-toolbar {
+  .eic-header {
     align-items: stretch;
     flex-direction: column;
   }
@@ -1009,5 +941,18 @@ void loadSettings()
   .preset-name-error {
     grid-column: 1;
   }
+}
+</style>
+
+<style lang="scss">
+// Pause-menu mod cards are hard-limited to 28em wide by the game layout, and
+// the mod-tab branch of PauseShell passes no width class. Widen the host card
+// only while an EIC page is mounted inside it. Global CSS with !important: the
+// game's scoped component rules out-specify/precede this stylesheet otherwise.
+// The broad descendant :has() is paired with the arcadeOrbit child-chain form
+// so the rule survives host DOM reshaping.
+.pause-layout .menu-content-card-1:has(> .card-cnt > .pause-main-card > .eic-settings),
+.menu-content-card-1:has(.eic-settings) {
+  width: clamp(34em, 38vw, 46em) !important;
 }
 </style>
