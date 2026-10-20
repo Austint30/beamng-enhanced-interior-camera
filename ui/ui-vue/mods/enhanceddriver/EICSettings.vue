@@ -146,6 +146,22 @@
               :model-value="displayValue(field)"
               @update:model-value="value => updateSetting(field, value)"
             />
+            <div class="setting-switch">
+              <div class="setting-switch-copy">
+                <div class="setting-switch-label">Steering Look-Ahead in Passenger Seats</div>
+                <div class="setting-switch-description">
+                  When enabled, steering look-ahead also applies while seated in a
+                  passenger seat. When disabled, only the driver's seat follows the
+                  steering input.
+                </div>
+              </div>
+              <BngSwitch
+                class="setting-switch-control"
+                :model-value="activeValues.steeringLookAheadPassengerSeats === true"
+                aria-label="Steering look-ahead in passenger seats"
+                @update:model-value="value => updateBooleanSetting('steeringLookAheadPassengerSeats', value)"
+              />
+            </div>
 
             <h3>Pitch, Roll, Yaw</h3>
             <SettingSlider

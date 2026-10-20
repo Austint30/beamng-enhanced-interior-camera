@@ -341,6 +341,20 @@ local function vanillaCameraRotation(self, data, carLeft, carFwd, carUp, carRot,
   end
 end
 
+-- Core injects the occupant seat's permission mode onto every camera instance
+-- (legacy vehicles only provide seatId on the 'driver' alias instance). Used to
+-- gate seat-specific features like steering look-ahead.
+local function isDriverSeatCamera(self)
+  if self.defaultPermissionMode ~= nil then
+    return self.defaultPermissionMode == 'driver'
+  end
+  if self.seatId ~= nil then
+    return self.seatId == 'driver'
+  end
+  -- Without any injected seat context, keep the historical driver-only behavior.
+  return true
+end
+
 local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carLeft, carFwd, carUp, carRot, carRotInverse, camRot)
   if not self.effectsEnabled then
     vanillaCameraRotation(self, data, carLeft, carFwd, carUp, carRot, camRot)
@@ -422,9 +436,16 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
 
   -- Steering look-ahead follows the supported, normalized vehicle steering input.
   -- Keep it separate from BeamNG's velocity-based look-ahead so users can tune it independently.
+  -- Passenger seats only track steering when steeringLookAheadPassengerSeats is enabled;
+  -- passing angle 0 makes the module zero its smoother instead of accumulating stale input.
+  local steeringLookAheadAngle = self:getSettingsValue('steeringLookAheadAngle', 0)
+  if not isDriverSeatCamera(self)
+      and not self:getSettingsValue('steeringLookAheadPassengerSeats', false) then
+    steeringLookAheadAngle = 0
+  end
   local steeringLookAheadAngleOffset = self.steeringLookAhead:getAngleOffset(
     data,
-    self:getSettingsValue('steeringLookAheadAngle', 0),
+    steeringLookAheadAngle,
     self:getSettingsValue('steeringLookAheadSmoothness', 50)
   )
   steeringLookAheadAngleOffset = steeringLookAheadAngleOffset * cameraEffectFactor
