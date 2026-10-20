@@ -25,11 +25,11 @@
 
       <div class="preset-toolbar">
         <BngRow class="preset-row" label="Preset">
-          <BngDropdown
+          <BngSmartSelect
             :model-value="chosenPreset"
             :items="presetItems"
-            long-names="wrap"
-            @update:model-value="selectPreset"
+            :type="presetItems.length >= 12 ? 'dropdown' : 'select'"
+            @change="selectPreset"
           />
         </BngRow>
 
@@ -189,10 +189,10 @@ import { useRoute } from "vue-router"
 import {
   ACCENTS,
   BngButton,
-  BngDropdown,
   BngIcon,
   BngInput,
   BngRow,
+  BngSmartSelect,
   BngTabs,
   icons,
 } from "@/common/components/base"
@@ -838,10 +838,23 @@ void loadSettings()
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
 
-  .preset-row {
-    --bng-row-breakpoint: 25%;
+// Mirror core's options row control layout (render/itemStyle.scss
+// .options-item-row): the control fills the row content column flush.
+// BngSmartSelect supplies the core select/stepper UI (auto-switching to a
+// dropdown with search for long lists) and row-level left/right stepping.
+.preset-row {
+  :deep(.bng-row-content > *) {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
   }
+
+  // Core dropdown background tokens for the long-list fallback.
+  --bng-dropdown-bg: var(--bng-cool-gray-700);
+  --bng-dropdown-bg-hover: var(--bng-cool-gray-600);
+  --bng-dropdown-bg-active: var(--bng-cool-gray-750);
 }
 
 .preset-actions {
