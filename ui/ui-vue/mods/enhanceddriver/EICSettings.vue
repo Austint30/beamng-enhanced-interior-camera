@@ -33,7 +33,7 @@
           />
         </BngRow>
 
-        <div class="preset-actions">
+        <div class="preset-actions" bng-nav-priority-container>
           <BngButton
             bng-nav-item
             :accent="ACCENTS.main"
