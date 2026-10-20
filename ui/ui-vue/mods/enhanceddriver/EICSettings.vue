@@ -35,12 +35,22 @@
 
         <div class="preset-actions">
           <BngButton
+            bng-nav-item
             :accent="ACCENTS.main"
             @click="openSavePrompt"
           >
             Save as preset…
           </BngButton>
           <BngButton
+            bng-nav-item
+            :accent="ACCENTS.text"
+            :disabled="!canRenamePreset"
+            @click="openRenamePrompt"
+          >
+            Rename preset…
+          </BngButton>
+          <BngButton
+            bng-nav-item
             :accent="ACCENTS.destructive"
             :disabled="!canDeletePreset"
             @click="deletePreset"
@@ -188,7 +198,7 @@ import {
 import { lua } from "@/bridge"
 import { runRaw } from "@/bridge/libs/Lua.js"
 import { useSettings } from "@/services/settings"
-import { openPrompt } from "@/services/popup"
+import { openConfirmation, openPrompt } from "@/services/popup"
 import SettingSlider from "./SettingSlider.vue"
 import SettingSwitch from "./SettingSwitch.vue"
 
@@ -563,6 +573,12 @@ const canDeletePreset = computed(
   () => chosenPreset.value === CUSTOM_PRESET || !DEFAULT_PRESETS.includes(chosenPreset.value)
 )
 
+// Only saved, non-default presets can be renamed (the transient Custom state
+// has no stored entry; default presets are reserved).
+const canRenamePreset = computed(
+  () => chosenPreset.value !== CUSTOM_PRESET && !DEFAULT_PRESETS.includes(chosenPreset.value)
+)
+
 // Validation for the save-preset prompt: non-empty, reserved names rejected,
 // and the name must not already be taken by another preset.
 function validatePresetName(name) {
@@ -697,9 +713,61 @@ async function openSavePrompt() {
   queueSave()
 }
 
-function deletePreset() {
+async function openRenamePrompt() {
+  const current = chosenPreset.value
+  if (!canRenamePreset.value) return
+  const name = await openPrompt(
+    "Choose a new name for this preset.",
+    "Rename preset",
+    {
+      defaultValue: current,
+      maxLength: 48,
+      validate: text => {
+        const trimmed = (text ?? "").trim()
+        if (!trimmed) return false
+        if (trimmed === current) return true
+        return validatePresetName(trimmed)
+      },
+      errorMessage: "That name is reserved or already in use.",
+      disableWhenInvalid: true,
+      buttons: [
+        {
+          label: "Cancel",
+          value: false,
+          extras: { cancel: true, outsideCancel: true, accent: ACCENTS.text },
+        },
+        { label: "Rename", value: text => text, extras: { confirm: true } },
+      ],
+    }
+  )
+  if (!name) return
+  const trimmed = String(name).trim()
+  if (trimmed === current) return
+  if (!validatePresetName(trimmed)) return
+  const values = presets[current]
+  delete presets[current]
+  presets[trimmed] = values
+  chosenPreset.value = trimmed
+  queueSave()
+}
+
+async function deletePreset() {
   if (!canDeletePreset.value) return
-  delete presets[chosenPreset.value]
+  const name = chosenPreset.value
+  const confirmed = await openConfirmation(
+    "Delete preset",
+    `Delete the preset "${name}"? This cannot be undone.`,
+    [
+      {
+        label: "Cancel",
+        value: false,
+        extras: { cancel: true, default: true, outsideCancel: true, accent: ACCENTS.text },
+      },
+      { label: "Delete", value: true, extras: { confirm: true, destructive: true } },
+    ]
+  )
+  if (!confirmed) return
+  delete presets[name]
   loadActivePreset("Default")
   queueSave()
 }
