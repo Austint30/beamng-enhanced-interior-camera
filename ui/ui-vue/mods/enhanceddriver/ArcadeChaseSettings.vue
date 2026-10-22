@@ -157,7 +157,7 @@ const speedDistanceFields = [
 
 const accelDistFields = [
   { key: "accelDistance_maxDist", label: "Max Distance Shift", description: "Maximum camera boom change under acceleration (metres).", min: 0, max: 2, step: 0.05, unit: "m" },
-  { key: "accelDistance_smoothness", label: "Smoothness", description: "Response speed. Lower = snappier.", min: 200, max: 5000, step: 100 },
+  { key: "accelDistance_smoothness", label: "Smoothness", description: "Response speed. Lower = snappier.", min: 200, max: 5000, step: 100, unit: "ms" },
 ]
 
 const accelRespFields = [

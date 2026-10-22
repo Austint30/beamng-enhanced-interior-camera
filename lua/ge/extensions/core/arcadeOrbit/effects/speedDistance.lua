@@ -16,10 +16,12 @@
 -- Speed comes from the vehicle velocity — `data.speed` is the UI camera-speed
 -- modifier (2–100) and must NOT be used.
 --
--- Brake cancellation: while the car is decelerating, the offset is scaled
+-- Brake cancellation: while the car is decelerating, the target is scaled
 -- down so the camera eases back toward the car during braking:
 --   cancel = strength * min(deceleration / brakeDecel, 1)
---   offset *= (1 - cancel)
+--   target *= (1 - cancel)
+-- This happens before the time-constant filter, so braking changes are
+-- smoothed like any other speed change instead of snapping the boom back.
 -- `strength` is a fraction 0..1 (settings store it as 0..100 %);
 -- `brakeDecel` is the deceleration in g at which the cancellation is fully
 -- applied. 0 g decel → no cancellation; above brakeDecel → full cancellation
@@ -84,39 +86,46 @@ function C:update(data)
   if data.dtSim < DT_MIN then return self._offset end
 
   local speed = data.vel:length()
-  local target
+  local speedTarget
   if self.maxSpeed <= 0 then
     -- "Reach full offset at any non-zero speed."
-    target = (speed > 0) and self.maxDist or 0
+    speedTarget = (speed > 0) and self.maxDist or 0
   else
     local ratio = speed / self.maxSpeed
     if ratio > 1 then ratio = 1 end
-    target = self.maxDist * ratio
+    speedTarget = self.maxDist * ratio
   end
 
   -- First frame after init/reset: adopt the current target so the offset
   -- never ramps in from the wrong side.
   if not self._initialized then
-    self._offset = target
+    self._offset = speedTarget
     self._initialized = true
     self._prevDtSim = data.dtSim
-    return self:brakeCancel(self._offset, data, nil)
+    return self._offset
   end
 
   local prevDtSim = self._prevDtSim
   self._prevDtSim = data.dtSim
 
+  -- Brake cancellation scales the TARGET, not the smoothed offset: scaling
+  -- the output after the filter made the boom snap back the instant the
+  -- brakes were applied, ignoring the smoothness setting entirely.
+  local cancel = self:getBrakeCancel(data, prevDtSim)
+  local target = speedTarget * (1 - cancel)
+
   self._offset = self._offset + (target - self._offset) * responseAlpha(data.dt, self.smoothness)
-  return self:brakeCancel(self._offset, data, prevDtSim)
+  return self._offset
 end
 
--- Brake cancellation (§5.10): scale the offset down while the car is
--- decelerating: cancel = strength * min(decel / brakeDecel, 1), where decel
--- is the (smoothed) loss of speed in g. No cancellation from 0 g up; the
--- scaling reaches `strength` at `brakeDecel` and stays clamped above it.
-function C:brakeCancel(offset, data, prevDtSim)
-  if self.brakeStrength <= 0 or offset == 0 then return offset end
-  if self.brakeDecel <= 0 then return 0 end
+-- Brake cancellation (§5.10): how much of the speed offset is removed while
+-- the car is decelerating: cancel = strength * min(decel / brakeDecel, 1),
+-- where decel is the (smoothed) loss of speed in g. No cancellation from 0 g
+-- up; the scaling reaches `strength` at `brakeDecel` and stays clamped above
+-- it. Returns a 0..1 factor; 1 = fully cancelled.
+function C:getBrakeCancel(data, prevDtSim)
+  if self.brakeStrength <= 0 then return 0 end
+  if self.brakeDecel <= 0 then return 1 end
 
   -- data.vel / data.prevVel are averages over consecutive camera intervals,
   -- so the time between those two samples is the mean of their sim deltas.
@@ -136,7 +145,7 @@ function C:brakeCancel(offset, data, prevDtSim)
 
   local ratio = (self._brakeDecel / G_REF) / self.brakeDecel
   if ratio > 1 then ratio = 1 end
-  return offset * (1 - self.brakeStrength * ratio)
+  return self.brakeStrength * ratio
 end
 
 -- DO NOT CHANGE CLASS IMPLEMENTATION BELOW
