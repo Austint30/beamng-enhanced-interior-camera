@@ -116,7 +116,7 @@ function C:onVehicleCameraConfigChanged()
   if not self.camRot then self.camRot = vec3(self.defaultRotation) end
   self.camLastRot = vec3(math.rad(self.camRot.x), math.rad(self.camRot.y), 0)
   self.camDist = 1.0
-  self.camLastDist = 1.0
+  self.camLastBaseDist = 1.0
   self.defaultDistance = 1.0
   self.screenFill = 0.5
   self.mode = self.mode or 'ref'
@@ -203,7 +203,7 @@ function C:deserialize(s)
     self:setRotation(vec3(s.rot.x, s.rot.y, s.rot.z))
     if self.camLastRot then self.camLastRot:set(math.rad(s.rot.x), math.rad(s.rot.y), 0) end
   end
-  if s.dist then self.camDist = s.dist; self.camLastDist = s.dist end
+  if s.dist then self.camDist = s.dist; self.camLastBaseDist = nil end
   if s.fov then self.fov = s.fov end
   self.cameraResetted = 0 -- keep the restored rotation/distance instead of snapping to the default next frame
 end
@@ -612,14 +612,14 @@ function C:update(data)
     self:computeFitDist(vehId)
     self._fitVehId = vehId
     self._fitDistDirty = false
-    self.camLastDist = self.fitDist * self.camDist
+    self.camLastBaseDist = self.fitDist * self.camDist
   end
 
   -- Input smoothing: stock orbit camera behaviour, verbatim semantics
   -- (~1/8 s exponential smoothing + yaw rate limit). Deliberately NOT
   -- user-configurable, like the stock camera. (Vehicle-driven boom motion is
   -- currently stock-instantaneous too — follow smoothing is disabled below.)
-  local dist = self.fitDist * self.camDist
+  local baseDist = self.fitDist * self.camDist
   if self.smoothingEnabled then
     local ratio = 1 / (data.dt * 8)
     local srdif = -sign(self.camLastRot.x - rot.x)
@@ -629,8 +629,15 @@ function C:update(data)
     local rotxDiff = (1 / (ratio + 1) * rot.x + (ratio / (ratio + 1)) * self.camLastRot.x) - self.camLastRot.x
     rot.x = self.camLastRot.x + sign(rotxDiff) * math.min(math.abs(rotxDiff), maxRot * data.dt)
     rot.y = 1 / (ratio + 1) * rot.y + (ratio / (ratio + 1)) * self.camLastRot.y
-    dist = 1 / (ratio + 1) * dist + (ratio / (ratio + 1)) * self.camLastDist
+    -- Smooth only the base distance. Feeding last frame's total back in (as
+    -- the stock camera does, where there are no additive offsets) would fold
+    -- the speed/accel offsets back into the filter and re-add them below,
+    -- amplifying them by ~1/weight -- a gain that changes with framerate.
+    if not self.camLastBaseDist then self.camLastBaseDist = baseDist end
+    baseDist = 1 / (ratio + 1) * baseDist + (ratio / (ratio + 1)) * self.camLastBaseDist
   end
+  self.camLastBaseDist = baseDist
+  local dist = baseDist
 
   -- Follow smoothing (PITCH only): eases the boom's vertical follow motion
   -- (bumps) and runs BEFORE the crest/valley overlay (below), so the base
@@ -706,7 +713,6 @@ function C:update(data)
   self.camVel:set((push3(camPos) - self.camLastPos) / data.dt)
   self.camLastPos:set(camPos)
   self.camLastRot:set(rot)
-  self.camLastDist = dist
   self.cameraResetted = math.max(self.cameraResetted - 1, 0)
 
   resultPos:set(camPos)
