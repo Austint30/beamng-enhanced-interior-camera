@@ -92,24 +92,6 @@ local function initEnhancedOccupant(self)
   self.lastCarHeading = vec3()
   self.currFov = 0
   self.lastSmoothRate = 0
-  self.disabledCockpitApps = false
-end
-
-local function onEnhancedCameraChanged(self)
-  self.disabledCockpitApps = false
-end
-
-local function disableCockpitApps(self)
-  if not self.disabledCockpitApps then
-    -- Re-evaluate cockpit gui app visibility. This camera IS the occupant
-    -- camera, but external UI events (menus opening/closing, session reloads)
-    -- can leave app state stale; re-trigger with the actual focused camera
-    -- name (e.g. 'occupant.driver') so the UI re-runs its cockpit checks.
-    local camName = core_camera and core_camera.getActiveCamName
-      and core_camera.getActiveCamName(0) or 'occupant'
-    guihooks.trigger('onCameraNameChanged', { name = camName })
-    self.disabledCockpitApps = true
-  end
 end
 
 local function initEnhancedOccupantSettings(self)
@@ -660,7 +642,6 @@ local function beginEnhancedUpdate(self, data)
   -- With the global effects switch off this camera must behave exactly like
   -- the stock occupant camera: skip the enhanced update bookkeeping entirely.
   if not self.effectsEnabled then
-    self:disableCockpitApps()
     return
   end
 
@@ -679,16 +660,12 @@ local function beginEnhancedUpdate(self, data)
   -- BeamNG marks vehicle rewinds and teleports in the supported camera data.
   -- Vehicle respawns/reloads also reach suppressCameraEffects through reset().
   if data.teleported then self:suppressCameraEffects() end
-
-  self:disableCockpitApps()
 end
 
 local M = {}
 
 function M.install(C)
   C.initEnhancedOccupant = initEnhancedOccupant
-  C.onEnhancedCameraChanged = onEnhancedCameraChanged
-  C.disableCockpitApps = disableCockpitApps
   C.initEnhancedOccupantSettings = initEnhancedOccupantSettings
   C.resetTransientCameraEffects = resetTransientCameraEffects
   C.suppressCameraEffects = suppressCameraEffects

@@ -122,7 +122,6 @@ function C:onCameraChanged(focused)
   end
   self.zoomSmoother:reset()
   core_camera.setCameraDriverZoom(0, self.player)
-  self:onEnhancedCameraChanged()
 end
 
 function C:onSettingsChanged()
