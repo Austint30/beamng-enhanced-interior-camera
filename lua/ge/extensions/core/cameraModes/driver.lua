@@ -1,0 +1,22 @@
+-- This Source Code Form is subject to the terms of the bCDDL, v. 1.1.
+-- If a copy of the bCDDL was not distributed with this
+-- file, You can obtain one at http://beamng.com/bCDDL-1.1.txt
+
+-- Legacy 'driver' camera alias.
+--
+-- BeamNG 0.40 only instantiates occupant-seat cameras (the multicam 'occupant'
+-- mode) for vehicles that define occupant slots. Pre-0.40 modded vehicles have
+-- none, so core falls back to the single 'driver' camera mode, which it
+-- normally aliases to the occupant constructor (see core camera.lua:
+-- constructorsCache.driver = constructorsCache.occupant).
+--
+-- That alias only applies when no driver.lua exists, so any shipped/stray
+-- driver.lua wins and these vehicles end up on the stock legacy camera, with
+-- no EIC effects and no usable look-ahead (its look-ahead setting is normally
+-- zeroed per EIC's own guidance).
+--
+-- Providing this alias ensures legacy vehicles use the occupant camera
+-- implementation here as well. Core passes the vehicle's legacy driver camera
+-- config (seatId/camNodeID/seatSide) straight into the constructor, so the
+-- occupant camera behaves like a driver-seat occupant camera.
+return require('core/cameraModes/occupant')
