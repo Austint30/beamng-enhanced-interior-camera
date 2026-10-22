@@ -189,6 +189,20 @@
       </BngTabs>
 
     </template>
+
+    <footer class="eic-footer">
+      <span>Enjoying Enhanced Interior Camera? Buy me a coffee at</span>
+      <span
+        class="eic-footer-link"
+        role="link"
+        tabindex="0"
+        title="Click to copy the link"
+        @click="copyDonationLink"
+        @keydown.enter.prevent="copyDonationLink"
+        @keydown.space.prevent="copyDonationLink"
+      >{{ DONATION_URL }}</span>
+      <span v-if="donationCopied" class="eic-footer-copied">Copied!</span>
+    </footer>
   </section>
 </template>
 
@@ -213,6 +227,7 @@ import SettingSwitch from "./SettingSwitch.vue"
 import { setArcadeChaseEnabled } from "./arcadeChaseDemo.js"
 
 const DEFAULT_SETTINGS_PATH = "/lua/ge/extensions/core/cameraModes/enhancedoccupantDefaults.json"
+const DONATION_URL = "https://ko-fi.com/austint30"
 const DEFAULT_PRESETS = [
   "Default",
   "Lookahead",
@@ -651,6 +666,49 @@ function toggleArcadeChase(value) {
   void setArcadeChaseEnabled(arcadeChaseEnabled.value)
 }
 
+const donationCopied = ref(false)
+let donationCopiedTimer = 0
+
+function copyDonationLink() {
+  const showCopied = () => {
+    donationCopied.value = true
+    clearTimeout(donationCopiedTimer)
+    donationCopiedTimer = setTimeout(() => {
+      donationCopied.value = false
+    }, 2000)
+  }
+
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(DONATION_URL).then(showCopied, () => copyDonationLinkFallback(showCopied))
+  } else {
+    copyDonationLinkFallback(showCopied)
+  }
+}
+
+// execCommand still works in CEF when the async clipboard API is unavailable,
+// as long as it runs from the click's user gesture.
+function copyDonationLinkFallback(showCopied) {
+  const textarea = document.createElement("textarea")
+  textarea.value = DONATION_URL
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.opacity = "0"
+  document.body.appendChild(textarea)
+  textarea.select()
+  let copied = false
+  try {
+    copied = document.execCommand("copy")
+  } catch {
+    copied = false
+  }
+  textarea.remove()
+  if (copied) showCopied()
+}
+
+onBeforeUnmount(() => {
+  clearTimeout(donationCopiedTimer)
+})
+
 function displayValue(field) {
   const value = Number(activeValues[field.key])
   if (!Number.isFinite(value)) return 0
@@ -902,6 +960,40 @@ void loadSettings()
   &.error {
     color: var(--bng-add-red-300);
   }
+}
+
+.eic-footer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem 0.4rem;
+  padding: 0 0.5rem 0.35rem;
+  color: rgba(var(--bng-off-white-rgb), 0.72);
+  font-size: 0.8rem;
+}
+
+.eic-footer-link {
+  color: var(--bng-orange-500);
+  text-decoration: underline;
+  cursor: pointer;
+  user-select: text;
+  word-break: break-all;
+
+  &:hover {
+    color: var(--bng-orange-300);
+  }
+
+  &:focus-visible {
+    outline: 0.12rem solid var(--bng-orange-500);
+    outline-offset: 0.1rem;
+  }
+}
+
+.eic-footer-copied {
+  color: var(--bng-off-white);
+  font-weight: 700;
 }
 
 .state-message {
