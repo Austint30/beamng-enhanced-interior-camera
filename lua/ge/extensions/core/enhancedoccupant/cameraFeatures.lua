@@ -52,6 +52,17 @@ local attachedCamFwd, attachedCamUp = vec3(), vec3()
 local blendedCamFwd, blendedCamUp = vec3(), vec3()
 local nRockPos, projectedRockPos = vec3(), vec3()
 
+-- Framerate-independent blend factor for the 0..1 axis smoothing settings.
+-- The setting maps to an approach rate (20/s at 0, slower towards 1); the
+-- result is the exact fraction of the remaining error to cover this frame.
+-- A dt-scaled lerp changes its effective cutoff with frame timing and can
+-- overshoot on long frames, which showed up as pitch/roll/yaw jitter.
+local function axisSmoothingFactor(dt, smoothness)
+  local rate = max(0, 1 - smoothness) * 20
+  if rate <= 0 or dt <= 0 then return 0 end
+  return 1 - math.exp(-rate * dt)
+end
+
 local function initEnhancedOccupant(self)
   self.steeringLookAhead = steeringLookAhead()
   self.tumbleDetection = tumbleDetection()
@@ -377,7 +388,7 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
 
   -- Smooth car fwd direction
   -- Full tumble attachment raises the follow factor to 1, removing orientation lag.
-  local pitchSmoothingFactor = (1 - self:getSettingsValue('pitchSmoothing', 0)) * data.dt * 20
+  local pitchSmoothingFactor = axisSmoothingFactor(data.dt, self:getSettingsValue('pitchSmoothing', 0))
   local pitchFollowFactor = lerp(1, pitchSmoothingFactor, gForceTumbleFactor)
   pitchFollowFactor = lerp(1, pitchFollowFactor, cameraEffectFactor)
   local lerpedCarFwd = lerp(self.lastCarFwd, carFwd, pitchFollowFactor)
@@ -385,7 +396,7 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
   self.lastCarFwd:set(carFwd)
 
   -- Smooth car left direction
-  local rollSmoothingFactor = (1 - self:getSettingsValue('rollSmoothing', 0)) * data.dt * 20
+  local rollSmoothingFactor = axisSmoothingFactor(data.dt, self:getSettingsValue('rollSmoothing', 0))
   local rollFollowFactor = lerp(1, rollSmoothingFactor, gForceTumbleFactor)
   rollFollowFactor = lerp(1, rollFollowFactor, cameraEffectFactor)
   local lerpedCarLeft = lerp(self.lastCarLeft, carLeft, rollFollowFactor)
@@ -395,7 +406,7 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
   -- Smooth car heading (yaw) by damping the horizontal components of carFwd,
   -- mirroring the vertical-only pitch and roll smoothing above. Re-normalize
   -- after replacing x/y so the smoothed vector stays unit length.
-  local yawSmoothingFactor = (1 - self:getSettingsValue('yawSmoothing', 0)) * data.dt * 20
+  local yawSmoothingFactor = axisSmoothingFactor(data.dt, self:getSettingsValue('yawSmoothing', 0))
   local yawFollowFactor = lerp(1, yawSmoothingFactor, gForceTumbleFactor)
   yawFollowFactor = lerp(1, yawFollowFactor, cameraEffectFactor)
   carFwd.x = lerp(self.lastCarHeading.x, carFwd.x, yawFollowFactor)
