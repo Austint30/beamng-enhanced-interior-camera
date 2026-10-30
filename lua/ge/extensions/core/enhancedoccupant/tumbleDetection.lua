@@ -14,10 +14,10 @@ local C = {}
 C.__index = C
 
 function C:init()
-  -- Suppression rises with the second rate and recovers with the first rate.
-  -- Let sustained tumbles engage gradually, but restore normal camera effects
-  -- promptly once the tumble ends.
-  self.suppressionSmoother = newTemporalSmoothingNonLinear(6, 4, 0)
+  -- Suppression rises gradually (rate 4/s) and recovers promptly (6/s).
+  -- Exact exponential (framerate-independent) instead of the engine's
+  -- dt-dependent smoother approximation.
+  self.suppression = 0
   self.previousUp = vec3()
   self.hasPreviousUp = false
   self.debugTimer = 0
@@ -27,7 +27,7 @@ function C:init()
 end
 
 function C:reset()
-  self.suppressionSmoother:reset()
+  self.suppression = 0
   self.hasPreviousUp = false
   self.debugTimer = 0
   self.tumbleCandidateTime = 0
@@ -87,7 +87,12 @@ function C:getGForceFactor(carUp, dt)
   -- A brief rotation spike never reaches the smoother. Only a sustained tumble
   -- is allowed to begin suppressing camera effects.
   local suppressionTarget = self.tumbleDetected and rawSuppressionTarget or 0
-  local suppression = self.suppressionSmoother:get(suppressionTarget, dt)
+  local suppressionDifference = suppressionTarget - self.suppression
+  local suppressionRate = (suppressionDifference * self.suppression >= 0) and 4 or 6
+  if dt and dt > 0 then
+    self.suppression = self.suppression + suppressionDifference * (1 - math.exp(-suppressionRate * dt))
+  end
+  local suppression = self.suppression
   local gForceFactor = 1 - clamp(suppression, 0, 1)
 
   if self.tumbleDetected ~= wasTumbleDetected then

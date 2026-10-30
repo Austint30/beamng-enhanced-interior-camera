@@ -6,12 +6,14 @@ local C = {}
 C.__index = C
 
 function C:init()
-  self.smoother = newTemporalSmoothingNonLinear(8, 8, 0)
+  -- Exact exponential smoothing (framerate-independent); the engine's
+  -- newTemporalSmoothingNonLinear uses a dt-dependent approximation.
+  self.smoothedInput = 0
   self.vehicleId = nil
 end
 
 function C:reset()
-  self.smoother:reset()
+  self.smoothedInput = 0
 end
 
 function C:invalidateRegistration()
@@ -43,19 +45,17 @@ end
 function C:getAngleOffset(data, angle, smoothness)
   angle = tonumber(angle) or 0
   if data.openxrSessionRunning or angle == 0 then
-    self.smoother:set(0)
+    self.smoothedInput = 0
     return 0
   end
 
   smoothness = clamp((tonumber(smoothness) or 50) / 100, 0, 1)
   local smoothingRate = lerp(20, 0.5, smootheststep(smoothness))
-  local smoothedSteeringInput = self.smoother:getWithRate(
-    self:getInput(data),
-    data.dt,
-    smoothingRate
-  )
+  local target = self:getInput(data)
+  local alpha = 1 - math.exp(-smoothingRate * data.dt)
+  self.smoothedInput = self.smoothedInput + (target - self.smoothedInput) * alpha
 
-  return math.rad(smoothedSteeringInput * angle)
+  return math.rad(self.smoothedInput * angle)
 end
 
 return function(...)

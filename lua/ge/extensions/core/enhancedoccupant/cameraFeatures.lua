@@ -52,6 +52,39 @@ local attachedCamFwd, attachedCamUp = vec3(), vec3()
 local blendedCamFwd, blendedCamUp = vec3(), vec3()
 local nRockPos, projectedRockPos = vec3(), vec3()
 
+-- Exact exponential smoothing. The engine's newTemporalSmoothingNonLinear
+-- approximates this with rate*dt/(1+rate*dt), whose effective time constant
+-- depends on the frame time. The newer core camera modes (droneChase, free,
+-- steadycam, scriptedFree) use the exact 1 - exp(-rate*dt) form instead.
+local ExpSmoother = {}
+ExpSmoother.__index = ExpSmoother
+
+function ExpSmoother:get(sample, dt, rateOverride)
+  local rate = rateOverride
+  if not rate then
+    -- Matches newTemporalSmoothingNonLinear's direction selection.
+    rate = ((sample - self.state) * self.state >= 0) and self.outRate or self.inRate
+  end
+  if rate <= 0 then
+    self.state = sample
+  elseif dt > 0 then
+    self.state = self.state + (sample - self.state) * (1 - math.exp(-rate * dt))
+  end
+  return self.state
+end
+
+function ExpSmoother:set(sample) self.state = sample end
+function ExpSmoother:value() return self.state end
+function ExpSmoother:reset() self.state = 0 end
+
+local function newExpSmoother(inRate, outRate, initial)
+  return setmetatable({
+    inRate = inRate or 1,
+    outRate = outRate or inRate or 1,
+    state = initial or 0,
+  }, ExpSmoother)
+end
+
 -- Framerate-independent blend factor for the 0..1 axis smoothing settings.
 -- The setting maps to an approach rate (20/s at 0, slower towards 1); the
 -- result is the exact fraction of the remaining error to cover this frame.
@@ -63,22 +96,29 @@ local function axisSmoothingFactor(dt, smoothness)
   return 1 - math.exp(-rate * dt)
 end
 
+local function expLerp(current, target, rate, dt)
+  if rate <= 0 then return target end
+  if dt <= 0 then return current end
+  return current + (target - current) * (1 - math.exp(-rate * dt))
+end
+
 local function initEnhancedOccupant(self)
   self.steeringLookAhead = steeringLookAhead()
   self.tumbleDetection = tumbleDetection()
-  self.gForceFwdSmoother = newTemporalSmoothingNonLinear(4, 4)
-  self.gForceSideSmoother = newTemporalSmoothingNonLinear(4, 4)
-  self.gForceSideLeanSmoother = newTemporalSmoothingNonLinear(4, 4)
-  self.gForceUpSmoother = newTemporalSmoothingNonLinear(5, 5)
-  self.velSmootherX = newTemporalSmoothingNonLinear(12, 16)
-  self.velSmootherY = newTemporalSmoothingNonLinear(12, 16)
-  self.velSmootherZ = newTemporalSmoothingNonLinear(12, 16)
+  self.gForceFwdSmoother = newExpSmoother(4, 4)
+  self.gForceSideSmoother = newExpSmoother(4, 4)
+  self.gForceSideLeanSmoother = newExpSmoother(4, 4)
+  self.gForceUpSmoother = newExpSmoother(5, 5)
+  self.velSmootherX = newExpSmoother(12, 16)
+  self.velSmootherY = newExpSmoother(12, 16)
+  self.velSmootherZ = newExpSmoother(12, 16)
   self.cameraEffectSuppressionTimer = cameraEffectSuppressionDuration
-  self.cameraEffectRecoverySmoother = newTemporalSmoothingNonLinear(
+  self.cameraEffectRecoverySmoother = newExpSmoother(
     cameraEffectRecoveryRate,
     cameraEffectRecoveryRate,
     0
   )
+  self._prevForceDtSim = nil
 
   self.gForceYBase = 0.45
   self.gForceSideYawBase = 0.3
@@ -125,6 +165,7 @@ local function resetTransientCameraEffects(self)
   self.velSmootherX:reset()
   self.velSmootherY:reset()
   self.velSmootherZ:reset()
+  self._prevForceDtSim = nil
 
   if self.fovSmoother then self.fovSmoother:set(0) end
 end
@@ -223,7 +264,7 @@ local function onEnhancedSettingsChanged(self)
   local fovSmoothRate = lerp(10, 0.5, self:getSettingsValue('fovSmoothRate') / 100)
   if abs(fovSmoothRate - self.lastSmoothRate) > 0.1 then
     -- Prevents a jutter effect when any setting is changed other than the FOV.
-    self.fovSmoother = newTemporalSmoothingNonLinear(fovSmoothRate, fovSmoothRate, self.currFov)
+    self.fovSmoother = newExpSmoother(fovSmoothRate, fovSmoothRate, self.currFov)
   end
   self.lastSmoothRate = fovSmoothRate
 end
@@ -317,12 +358,13 @@ local function vanillaCameraRotation(self, data, carLeft, carFwd, carUp, carRot,
   local camRoll = carRoll * carRollFactor
 
   -- Look-ahead angle
-  self.fwdSpeed = lerp(self.fwdSpeed, -data.vel:length() * push3(data.vel):normalized():dot(carFwd), data.dt * (1.5 - self.lookAheadSmoothness))
+  local fwdTarget = -data.vel:length() * push3(data.vel):normalized():dot(carFwd)
+  self.fwdSpeed = expLerp(self.fwdSpeed, fwdTarget, max(0, 1.5 - self.lookAheadSmoothness), data.dt)
   nRockPos:set(push3(carFwd) * (1 - self.rockPos:length() / self.lookAheadSmoothness) + self.rockPos)
   nRockPos:normalize()
   local lookAheadAngle = data.openxrSessionRunning and 0 or self.lookAheadAngle -- disable LookAhead while in VR
   local lookAheadAngleOffset = math.atan2(nRockPos.x * carFwd.y - nRockPos.y * carFwd.x, nRockPos.x * carFwd.x + nRockPos.y * carFwd.y)
-  self.rockPos:setScaled((1 - data.dt * 0.1) * clamp(self.fwdSpeed / 20, 0, 1))
+  self.rockPos:setScaled(math.exp(-0.1 * data.dt) * clamp(self.fwdSpeed / 20, 0, 1))
   lookAheadAngleOffset = clamp(lookAheadAngleOffset, -1.1, 1.1) * lookAheadAngle * clamp(self.fwdSpeed / 15, 0, 1)
 
   -- Lock pitch to horizon
@@ -414,6 +456,14 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
   if carFwd:squaredLength() > 1e-8 then carFwd:normalize() end
   self.lastCarHeading:set(carFwd)
 
+  -- carUp was computed from the raw axes before smoothing; rebuild it from
+  -- the smoothed forward/left so the horizon lock does not mix frames (which
+  -- made roll/pitch jitter, especially at speed or with uneven frame times).
+  carUp:setCross(carLeft, carFwd)
+  if carUp:squaredLength() > 1e-8 then
+    carUp:normalize()
+  end
+
   -- Stable horizon
   carRot:setFromDir(carFwd, carUp)
   camRot:setFromDir(-push3(carFwd))
@@ -427,14 +477,14 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
   local camPitch = carPitch * carPitchFactor
 
   -- Look-ahead angle
-  self.fwdSpeed = lerp(self.fwdSpeed, -data.vel:length() * push3(data.vel):normalized():dot(carFwd),
-    data.dt * (1.5 - self.lookAheadSmoothness))
+  local fwdTarget = -data.vel:length() * push3(data.vel):normalized():dot(carFwd)
+  self.fwdSpeed = expLerp(self.fwdSpeed, fwdTarget, max(0, 1.5 - self.lookAheadSmoothness), data.dt)
   nRockPos:set(push3(carFwd) * (1 - self.rockPos:length() / self.lookAheadSmoothness) + self.rockPos)
   nRockPos:normalize()
   local lookAheadAngle = data.openxrSessionRunning and 0 or self.lookAheadAngle -- disable LookAhead while in VR
   local lookAheadAngleOffset = math.atan2(nRockPos.x * carFwd.y - nRockPos.y * carFwd.x,
     nRockPos.x * carFwd.x + nRockPos.y * carFwd.y)
-  self.rockPos:setScaled((1 - data.dt * 0.1) * clamp(self.fwdSpeed / 20, 0, 1))
+  self.rockPos:setScaled(math.exp(-0.1 * data.dt) * clamp(self.fwdSpeed / 20, 0, 1))
   lookAheadAngleOffset = clamp(lookAheadAngleOffset, -1.1, 1.1) * lookAheadAngle * clamp(self.fwdSpeed / 15, 0, 1)
   lookAheadAngleOffset = lookAheadAngleOffset * cameraEffectFactor
 
@@ -456,6 +506,8 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
 
   -- Rotate the camera in response to longitudinal, lateral, and vertical g-forces.
   profiler.start('GForce') -- Added g-force smoothing and rotation blending (enhancedoccupant)
+  local prevForceDtSim = self._prevForceDtSim
+  self._prevForceDtSim = data.dtSim
   local rawFwdForce, rawSideForce, rawUpForce = 0, 0, 0
   if cameraEffectFactor > 0 and data.dt > 1e-6 then
     local accel = carRotInverse * data.vel - carRotInverse * data.prevVel
@@ -465,14 +517,20 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
     accel.y = self.velSmootherY:get(accel.y, data.dt)
     accel.z = self.velSmootherZ:get(accel.z, data.dt)
 
-    -- Divide by the true frame delta (see beginEnhancedUpdate): accel holds
-    -- the velocity change accumulated across the whole hitch, so clamping
-    -- this divisor would scale the force spike with the stall length.
-    local forceDelta = self.rawFrameDelta or data.dt
-    rawFwdForce = -accel.y / (forceDelta * 100) * cameraEffectFactor
+    -- data.vel / data.prevVel are averages over consecutive camera intervals,
+    -- so the time between those samples is the mean of the two sim deltas.
+    -- Using only the current frame delta makes the force (and therefore the
+    -- camera rotation) depend on the framerate.
+    local forceSpan = data.dtSim
+    if prevForceDtSim and prevForceDtSim > 0 then
+      forceSpan = (prevForceDtSim + data.dtSim) * 0.5
+    end
+    if forceSpan <= 1e-6 then forceSpan = self.rawFrameDelta or data.dt end
+
+    rawFwdForce = -accel.y / (forceSpan * 100) * cameraEffectFactor
     -- Vehicle-space +X points left, while positive camera yaw looks right.
-    rawSideForce = accel.x / (forceDelta * 100) * cameraEffectFactor
-    rawUpForce = -accel.z / (forceDelta * 100) * cameraEffectFactor
+    rawSideForce = accel.x / (forceSpan * 100) * cameraEffectFactor
+    rawUpForce = -accel.z / (forceSpan * 100) * cameraEffectFactor
   end
 
   -- Reduce impact of braking being detected as upward acceleration
@@ -526,7 +584,7 @@ local function updateEnhancedCameraRotation(self, data, cameraEffectFactor, carL
   local smoothedSideForce = self.gForceSideSmoother:get(rawSideForce, data.dt)
   local sideLeanSmoothness = clamp(self:getSettingsValue('gForceSideLeanRollSmoothness', 75) / 100, 0, 1)
   local sideLeanSmoothingRate = lerp(8, 0.25, smootheststep(sideLeanSmoothness))
-  local smoothedSideLeanForce = self.gForceSideLeanSmoother:getWithRate(
+  local smoothedSideLeanForce = self.gForceSideLeanSmoother:get(
     rawSideLeanForce,
     data.dt,
     sideLeanSmoothingRate
