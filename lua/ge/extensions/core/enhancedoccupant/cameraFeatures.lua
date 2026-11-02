@@ -132,6 +132,7 @@ local function initEnhancedOccupant(self)
   self.driftshake = shake()
   self.driftshake:init(vec3(0.3, 0.1, 0.1), vec3(5.0, 5.0, 5.0), true)
   self.hasResetted = false
+  self._vrActive = false
 
   self.effectsEnabled = true -- global master switch, overridden by saved settings
   self.defaultSettings = jsonReadFile('/lua/ge/extensions/core/cameraModes/enhancedoccupantDefaults.json')
@@ -202,8 +203,15 @@ local function loadSettingsPreset(self)
   }
 
   local edcSettings = self.defaultSettings
+  if edcSettings == nil then
+    log("E", "", "Failed to load Enhanced Interior Camera settings!")
+    return {}
+  end
 
   local loadedSettings = settings.getValue('edcSettings')
+  local selectedPreset = edcSettings.chosenPreset
+  local syncVrPreset = edcSettings.syncVrPreset == true
+  local vrPreset = edcSettings.vrChosenPreset or 'VR (Comfort)'
 
   if loadedSettings then
     if loadedSettings.effectsEnabled ~= nil then
@@ -214,7 +222,13 @@ local function loadSettingsPreset(self)
       self.effectsEnabled = true
     end
     if loadedSettings.chosenPreset then
-      edcSettings.chosenPreset = loadedSettings.chosenPreset
+      selectedPreset = loadedSettings.chosenPreset
+    end
+    if loadedSettings.syncVrPreset ~= nil then
+      syncVrPreset = loadedSettings.syncVrPreset == true
+    end
+    if loadedSettings.vrChosenPreset then
+      vrPreset = loadedSettings.vrChosenPreset
     end
     if loadedSettings.presets then
       for loadedPreset, _ in pairs(loadedSettings.presets) do
@@ -225,12 +239,21 @@ local function loadSettingsPreset(self)
     end
   end
 
-  if edcSettings == nil then
-    log("E", "", "Failed to load Enhanced Interior Camera settings!")
-    return {}
+  -- Flat and VR keep independent selections unless syncing is enabled. With
+  -- syncing off, VR uses its own selection; otherwise it follows the primary.
+  if not syncVrPreset and self._vrActive then
+    selectedPreset = vrPreset
   end
 
-  local activePreset = edcSettings.presets[edcSettings.chosenPreset]
+  local activePreset = edcSettings.presets[selectedPreset]
+  if not activePreset and self._vrActive and not syncVrPreset then
+    selectedPreset = edcSettings.vrChosenPreset or 'VR (Comfort)'
+    activePreset = edcSettings.presets[selectedPreset]
+  end
+  if not activePreset then
+    selectedPreset = edcSettings.chosenPreset or 'Default'
+    activePreset = edcSettings.presets[selectedPreset]
+  end
 
   -- Merge activePreset with default settings
   -- This is so old settings get updated with new default settings if updating to a new version
@@ -708,6 +731,14 @@ local function updateEnhancedShakes(self, data, cameraEffectFactor, carRotInvers
 end
 
 local function beginEnhancedUpdate(self, data)
+  -- Follow the active display mode: VR can force its own preset, while
+  -- flatscreen always uses the primary selection.
+  local vrActive = data.openxrSessionRunning == true
+  if vrActive ~= self._vrActive then
+    self._vrActive = vrActive
+    self:onEnhancedSettingsChanged()
+  end
+
   -- With the global effects switch off this camera must behave exactly like
   -- the stock occupant camera: skip the enhanced update bookkeeping entirely.
   if not self.effectsEnabled then

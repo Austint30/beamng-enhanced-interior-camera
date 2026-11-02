@@ -1,5 +1,7 @@
 {
   "chosenPreset": "Default",
+  "syncVrPreset": false,
+  "vrChosenPreset": "VR (Comfort)",
   "presets": {
     "Default": {
       "disableHorizonLockWhileTumbling": true,

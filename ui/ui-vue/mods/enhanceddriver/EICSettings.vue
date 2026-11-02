@@ -24,9 +24,9 @@
       />
 
       <div class="preset-toolbar">
-        <BngRow class="preset-row" label="Preset">
+        <BngRow class="preset-row" :label="vrActive ? 'VR Preset' : 'Preset'">
           <BngSmartSelect
-            v-model="chosenPreset"
+            :model-value="activePresetName"
             :items="presetItems"
             :type="presetItems.length >= 12 ? 'dropdown' : 'select'"
             @update:model-value="selectPreset"
@@ -183,6 +183,18 @@
               label="Enable Arcade Chase Camera"
               description="Enables an experimental Arcade Chase Camera mode. This will be coming soon in an upcoming major update."
               @update:model-value="toggleArcadeChase"
+            />
+          </div>
+        </div>
+
+        <div tab-heading="VR">
+          <div class="settings-panel">
+            <h3>VR Preset</h3>
+            <SettingSwitch
+              :model-value="syncVrPreset"
+              label="Sync VR Preset"
+              description="Keep the flatscreen and VR preset selections synchronized. When disabled, VR uses the primary preset selector independently."
+              @update:model-value="toggleSyncVrPreset"
             />
           </div>
         </div>
@@ -530,6 +542,10 @@ const saveError = ref("")
 const saveStatus = ref("")
 const activeTab = ref(0)
 const chosenPreset = ref("Default")
+const syncVrPreset = ref(false)
+const vrChosenPreset = ref("VR (Comfort)")
+const vrActive = ref(false)
+let vrStateTimer = 0
 const effectsEnabled = ref(true)
 const arcadeChaseEnabled = ref(false)
 const presets = reactive({})
@@ -570,9 +586,12 @@ function shouldPauseForRoute(routeName) {
 
 onMounted(() => {
   queueSimulationPause(false)
+  refreshVrActive()
+  vrStateTimer = setInterval(refreshVrActive, 1000)
 })
 
 onBeforeUnmount(() => {
+  clearInterval(vrStateTimer)
   if (shouldPauseForRoute(route.name)) {
     queueSimulationPause(true)
   }
@@ -595,14 +614,20 @@ const presetItems = computed(() =>
     .map(name => ({ label: name, value: name }))
 )
 
+const activePresetName = computed(() =>
+  vrActive.value ? vrChosenPreset.value : chosenPreset.value
+)
+
 const canDeletePreset = computed(
-  () => chosenPreset.value === CUSTOM_PRESET || !DEFAULT_PRESETS.includes(chosenPreset.value)
+  () => activePresetName.value === CUSTOM_PRESET || !DEFAULT_PRESETS.includes(activePresetName.value)
 )
 
 // Only saved, non-default presets can be renamed (the transient Custom state
 // has no stored entry; default presets are reserved).
 const canRenamePreset = computed(
-  () => chosenPreset.value !== CUSTOM_PRESET && !DEFAULT_PRESETS.includes(chosenPreset.value)
+  () =>
+    activePresetName.value !== CUSTOM_PRESET &&
+    !DEFAULT_PRESETS.includes(activePresetName.value)
 )
 
 // Validation for the save-preset prompt: non-empty, reserved names rejected,
@@ -642,17 +667,70 @@ function normalizedPreset(value) {
   }
 }
 
+function resolvePresetName(name) {
+  return Object.prototype.hasOwnProperty.call(presets, name) ? name : "Default"
+}
+
+function loadPresetValues(name) {
+  const resolvedName = resolvePresetName(name)
+  replaceReactive(activeValues, normalizedPreset(presets[resolvedName]))
+  return resolvedName
+}
+
+function setActivePreset(name) {
+  const resolvedName = resolvePresetName(name)
+  if (syncVrPreset.value) {
+    chosenPreset.value = resolvedName
+    vrChosenPreset.value = resolvedName
+  } else if (vrActive.value) {
+    vrChosenPreset.value = resolvedName
+  } else {
+    chosenPreset.value = resolvedName
+  }
+  return resolvedName
+}
+
 function loadActivePreset(name) {
-  const resolvedName = Object.prototype.hasOwnProperty.call(presets, name) ? name : "Default"
-  const normalizedValues = normalizedPreset(presets[resolvedName])
-  chosenPreset.value = resolvedName
-  replaceReactive(activeValues, normalizedValues)
+  const resolvedName = setActivePreset(name)
+  loadPresetValues(resolvedName)
+  return resolvedName
 }
 
 function selectPreset(name) {
   if (!Object.prototype.hasOwnProperty.call(presets, name)) return
   loadActivePreset(name)
   queueSave()
+}
+
+function markActivePresetCustom() {
+  if (activePresetName.value === CUSTOM_PRESET) return
+  presets[CUSTOM_PRESET] = clone(activeValues)
+  setActivePreset(CUSTOM_PRESET)
+}
+
+function toggleSyncVrPreset(value) {
+  syncVrPreset.value = value === true
+  if (syncVrPreset.value) {
+    const current = activePresetName.value
+    chosenPreset.value = current
+    vrChosenPreset.value = current
+  }
+  queueSave()
+}
+
+async function refreshVrActive() {
+  try {
+    const active = await runRaw(
+      `(extensions.render_openxr and extensions.render_openxr.state and extensions.render_openxr.state.sessionRunning) or false`
+    )
+    const next = active === true
+    if (next !== vrActive.value) {
+      vrActive.value = next
+      if (defaults && !loading.value) loadPresetValues(activePresetName.value)
+    }
+  } catch {
+    // OpenXR extension not loaded; remain in flatscreen mode.
+  }
 }
 
 function toggleEffects(value) {
@@ -722,10 +800,7 @@ function toStoredValue(field, value) {
 }
 
 function updateSetting(field, value) {
-  if (chosenPreset.value !== CUSTOM_PRESET) {
-    presets[CUSTOM_PRESET] = clone(activeValues)
-    chosenPreset.value = CUSTOM_PRESET
-  }
+  markActivePresetCustom()
 
   activeValues[field.key] = toStoredValue(field, value)
 
@@ -750,10 +825,7 @@ function updateSetting(field, value) {
 }
 
 function updateBooleanSetting(key, value) {
-  if (chosenPreset.value !== CUSTOM_PRESET) {
-    presets[CUSTOM_PRESET] = clone(activeValues)
-    chosenPreset.value = CUSTOM_PRESET
-  }
+  markActivePresetCustom()
 
   activeValues[key] = value === true
   presets[CUSTOM_PRESET] = clone(activeValues)
@@ -784,12 +856,14 @@ async function openSavePrompt() {
   if (!validatePresetName(trimmed)) return
   presets[trimmed] = clone(activeValues)
   delete presets[CUSTOM_PRESET]
-  chosenPreset.value = trimmed
+  if (chosenPreset.value === CUSTOM_PRESET) chosenPreset.value = trimmed
+  if (vrChosenPreset.value === CUSTOM_PRESET) vrChosenPreset.value = trimmed
+  loadActivePreset(activePresetName.value)
   queueSave()
 }
 
 async function openRenamePrompt() {
-  const current = chosenPreset.value
+  const current = activePresetName.value
   if (!canRenamePreset.value) return
   const name = await openPrompt(
     "Choose a new name for this preset.",
@@ -822,13 +896,15 @@ async function openRenamePrompt() {
   const values = presets[current]
   delete presets[current]
   presets[trimmed] = values
-  chosenPreset.value = trimmed
+  if (chosenPreset.value === current) chosenPreset.value = trimmed
+  if (vrChosenPreset.value === current) vrChosenPreset.value = trimmed
+  loadActivePreset(activePresetName.value)
   queueSave()
 }
 
 async function deletePreset() {
   if (!canDeletePreset.value) return
-  const name = chosenPreset.value
+  const name = activePresetName.value
   const confirmed = await openConfirmation(
     "Delete preset",
     `Delete the preset "${name}"? This cannot be undone.`,
@@ -843,7 +919,9 @@ async function deletePreset() {
   )
   if (!confirmed) return
   delete presets[name]
-  loadActivePreset("Default")
+  if (chosenPreset.value === name) chosenPreset.value = "Default"
+  if (vrChosenPreset.value === name) vrChosenPreset.value = "Default"
+  loadActivePreset(activePresetName.value)
   queueSave()
 }
 
@@ -854,6 +932,8 @@ function settingsSnapshot() {
   }
   return {
     chosenPreset: chosenPreset.value,
+    syncVrPreset: syncVrPreset.value,
+    vrChosenPreset: vrChosenPreset.value,
     presets: customPresets,
     // Global master switch, stored outside the presets so it applies to all of them.
     effectsEnabled: effectsEnabled.value,
@@ -902,11 +982,22 @@ async function loadSettings() {
       }
     }
 
-    const initialPreset =
-      stored?.chosenPreset && Object.prototype.hasOwnProperty.call(presets, stored.chosenPreset)
-        ? stored.chosenPreset
-        : defaults.chosenPreset || "Default"
-    loadActivePreset(initialPreset)
+    syncVrPreset.value = stored?.syncVrPreset === true
+
+    const storedFlat = stored?.chosenPreset || defaults.chosenPreset || "Default"
+    chosenPreset.value = resolvePresetName(storedFlat)
+
+    const vrFallback = defaults.vrChosenPreset || "VR (Comfort)"
+    const storedVr = stored?.vrChosenPreset || vrFallback
+    vrChosenPreset.value = Object.prototype.hasOwnProperty.call(presets, storedVr)
+      ? storedVr
+      : resolvePresetName(vrFallback)
+
+    if (syncVrPreset.value) {
+      vrChosenPreset.value = chosenPreset.value
+    }
+
+    loadActivePreset(activePresetName.value)
 
     // Keep the hidden Arcade Chase Camera demo in sync with the saved toggle.
     void setArcadeChaseEnabled(arcadeChaseEnabled.value)
