@@ -37,7 +37,8 @@ $zipPath = Join-Path -Path $distPath -ChildPath "$modBaseName.zip"
 $srcFolders = @(
     "locales",
     "lua",
-    "ui"
+    "ui",
+    "scripts"
 )
 
 # Function to create zip file
