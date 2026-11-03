@@ -147,7 +147,16 @@ local function initEnhancedOccupant(self)
 end
 
 local function initEnhancedOccupantSettings(self)
-  for k, v in pairs(self.defaultSettings.presets['Default']) do
+  local defaults = self.defaultSettings
+  if not defaults or not defaults.presets or not defaults.presets['Default'] then
+    -- The mod was disabled while its camera constructor was still cached:
+    -- the defaults JSON is unmounted, so fall back to stock behavior instead
+    -- of erroring on every camera rebuild.
+    self.effectsEnabled = false
+    return
+  end
+
+  for k, v in pairs(defaults.presets['Default']) do
     self.edcSettings[k] = v
   end
 end
@@ -204,7 +213,9 @@ local function loadSettingsPreset(self)
 
   local edcSettings = self.defaultSettings
   if edcSettings == nil then
-    log("E", "", "Failed to load Enhanced Interior Camera settings!")
+    -- The mod was disabled while its camera constructor was still cached:
+    -- the defaults file is unmounted. Behave like the stock camera instead
+    -- of logging an error every time a camera instance is rebuilt.
     return {}
   end
 

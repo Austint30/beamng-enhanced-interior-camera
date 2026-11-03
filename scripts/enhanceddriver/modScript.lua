@@ -39,3 +39,9 @@ for _, name in ipairs(modules) do
 end
 
 log('I', 'enhanceddriver', 'Cleared cached camera modules after mod activation')
+
+-- The hook extension handles the inverse transition (mod deactivated) by
+-- clearing the same modules before core_camera rebuilds its cameras.
+if extensions and type(extensions.load) == 'function' then
+  pcall(extensions.load, 'enhanceddriver_cameraHooks')
+end
