@@ -220,7 +220,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue"
-import { useRoute } from "vue-router"
+import { onBeforeRouteLeave, useRoute } from "vue-router"
 import {
   ACCENTS,
   BngButton,
@@ -555,6 +555,21 @@ let defaults = null
 let saveQueue = Promise.resolve()
 let saveGeneration = 0
 let simulationPauseQueue = Promise.resolve()
+let routeLeaveHandled = false
+let multiplayerSession = false
+let multiplayerSessionCheck = Promise.resolve(false)
+
+function checkMultiplayerSession() {
+  multiplayerSessionCheck = runRaw(
+    "(MPCoreNetwork and MPCoreNetwork.isMPSession and MPCoreNetwork.isMPSession()) == true"
+  )
+    .then(value => {
+      multiplayerSession = value === true || value === "true"
+      return multiplayerSession
+    })
+    .catch(() => false)
+  return multiplayerSessionCheck
+}
 
 async function setSimulationPaused(paused) {
   try {
@@ -586,15 +601,34 @@ function shouldPauseForRoute(routeName) {
 
 onMounted(() => {
   queueSimulationPause(false)
+  void checkMultiplayerSession()
   refreshVrActive()
   vrStateTimer = setInterval(refreshVrActive, 1000)
 })
 
-onBeforeUnmount(() => {
-  clearInterval(vrStateTimer)
-  if (shouldPauseForRoute(route.name)) {
+// Unpause while the settings are visible so camera changes can be previewed.
+// Only re-pause when navigating to another pause-menu page; when leaving the
+// pause menu, the pause menu itself resumes the simulation. BeamMP keeps the
+// simulation running while its pause menu is open, so never re-pause there.
+onBeforeRouteLeave(async to => {
+  routeLeaveHandled = true
+  await multiplayerSessionCheck
+  if (multiplayerSession) return
+  if (shouldPauseForRoute(to.name)) {
     queueSimulationPause(true)
   }
+})
+
+onBeforeUnmount(() => {
+  clearInterval(vrStateTimer)
+  if (routeLeaveHandled) return
+  // Switching between mod cards does not change the pause route, so the route
+  // guard above does not fire. Re-pause for those in-menu switches only.
+  void multiplayerSessionCheck.then(() => {
+    if (!multiplayerSession && shouldPauseForRoute(route.name)) {
+      queueSimulationPause(true)
+    }
+  })
 })
 
 const speedUnit = computed(() => {

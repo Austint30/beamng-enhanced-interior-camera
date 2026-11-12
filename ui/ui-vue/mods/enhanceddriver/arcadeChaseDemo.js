@@ -28,7 +28,10 @@ export async function unregisterArcadeChaseButton() {
 
 export async function readArcadeChaseEnabled() {
   try {
-    return (await runRaw("arcadeChaseDemoIsEnabled()")) === true
+    const enabled = await runRaw(
+      "(arcadeChaseDemoIsEnabled and arcadeChaseDemoIsEnabled()) == true"
+    )
+    return enabled === true
   } catch (error) {
     console.warn("[Enhanced Driver] Could not read the Arcade Chase Camera demo state", error)
     return false
@@ -39,7 +42,7 @@ export async function setArcadeChaseEnabled(enabled) {
   const on = enabled === true
   try {
     // Updates the live camera instances and the camera-cycle configuration.
-    await runRaw(`arcadeChaseDemoApply(${on ? "true" : "false"})`)
+    await runRaw(`(arcadeChaseDemoApply and arcadeChaseDemoApply(${on})) == true`)
   } catch (error) {
     console.warn("[Enhanced Driver] Could not apply the Arcade Chase Camera demo state", error)
   }

@@ -139,6 +139,16 @@ local function initEnhancedOccupant(self)
   self.edcSettings = {}
   self:initEnhancedOccupantSettings()
 
+  log(
+    'I',
+    'enhancedoccupant',
+    string.format(
+      'camera init: defaults=%s effects=%s',
+      tostring(self.defaultSettings ~= nil),
+      tostring(self.effectsEnabled)
+    )
+  )
+
   self.lastCarFwd = vec3()
   self.lastCarLeft = vec3()
   self.lastCarHeading = vec3()

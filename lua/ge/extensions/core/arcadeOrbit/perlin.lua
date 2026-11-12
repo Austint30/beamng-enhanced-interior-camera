@@ -9,7 +9,7 @@
 
 local bit32 = bit
 
-C = {}
+local C = {}
 C.p = {}
 
 -- Hash lookup table as defined by Ken Perlin

@@ -38,10 +38,23 @@ for _, name in ipairs(modules) do
   package.loaded[name] = nil
 end
 
+-- Clearing package.loaded is not enough if core_camera already built camera
+-- constructors from the stock modules. Invalidate its cache here as well; a
+-- runtime activation (BeamMP joins) can otherwise keep the stock occupant
+-- camera even though the mod files are mounted.
+if core_camera and type(core_camera.onFileChanged) == 'function' then
+  core_camera.onFileChanged('/lua/ge/extensions/core/cameraModes/occupant.lua', 'deleted')
+  core_camera.onFileChanged('/lua/ge/extensions/core/cameraModes/driver.lua', 'deleted')
+  log('I', 'enhanceddriver', 'Invalidated core camera constructor cache after mod activation')
+end
+
 log('I', 'enhanceddriver', 'Cleared cached camera modules after mod activation')
 
 -- The hook extension handles the inverse transition (mod deactivated) by
 -- clearing the same modules before core_camera rebuilds its cameras.
+if type(setExtensionUnloadMode) == 'function' then
+  setExtensionUnloadMode('enhanceddriver_cameraHooks', 'manual')
+end
 if extensions and type(extensions.load) == 'function' then
   pcall(extensions.load, 'enhanceddriver_cameraHooks')
 end

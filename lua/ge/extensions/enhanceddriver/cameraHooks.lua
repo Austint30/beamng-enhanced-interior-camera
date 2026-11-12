@@ -8,6 +8,14 @@
 
 local M = {}
 
+function M.onExtensionLoaded()
+  -- Stay loaded when the mod is disabled so onModDeactivated can drop the
+  -- cached camera constructors before core_camera rebuilds its cameras.
+  if type(setExtensionUnloadMode) == 'function' then
+    setExtensionUnloadMode(M, 'manual')
+  end
+end
+
 local modules = {
   'core/cameraModes/arcadeOrbit',
   'core/cameraModes/driver',
@@ -52,9 +60,71 @@ local function isOurMod(mod)
     or id:find('enhanced-interior-camera', 1, true) ~= nil
 end
 
+local function registerUiButtons()
+  local pauseActions = extensions and extensions.ui_pause_actions
+  if not pauseActions or type(pauseActions.registerModButton) ~= 'function' then
+    log('W', 'enhanceddriver', 'ui_pause_actions unavailable; restart the game to load EIC settings')
+    return
+  end
+
+  -- Register the pause-menu entry directly instead of reloading the UI. A UI
+  -- reload during an active session can leave the game window unfocused, which
+  -- makes BeamNG mute game audio (while CEF UI sounds keep playing).
+  local eic = pauseActions.registerModButton({
+    id = 'enhanceddriver.eic-settings',
+    tabId = 'mods',
+    label = 'EIC Settings',
+    icon = 'wrench',
+    componentName = '/ui/ui-vue/mods/enhanceddriver/EICSettings.vue',
+  })
+  if not (eic and eic.success) then
+    log('W', 'enhanceddriver', 'failed to register the EIC settings button: ' .. tostring(eic and eic.reason))
+  end
+
+  local arcadeEnabled = false
+  if type(arcadeChaseDemoIsEnabled) == 'function' then
+    arcadeEnabled = arcadeChaseDemoIsEnabled()
+  elseif type(settings) == 'table' and type(settings.getValue) == 'function' then
+    local edc = settings.getValue('edcSettings')
+    arcadeEnabled = type(edc) == 'table' and edc.arcadeChaseEnabled == true
+  end
+
+  if arcadeEnabled then
+    local arcade = pauseActions.registerModButton({
+      id = 'arcadeOrbit.settings',
+      tabId = 'mods',
+      label = 'ACC Settings',
+      icon = 'aperture',
+      componentName = '/ui/ui-vue/mods/enhanceddriver/ArcadeChaseSettings.vue',
+    })
+    if not (arcade and arcade.success) then
+      log('W', 'enhanceddriver', 'failed to register the Arcade Chase settings button: ' .. tostring(arcade and arcade.reason))
+    end
+  end
+end
+
+local function unregisterUiButtons()
+  local pauseActions = extensions and extensions.ui_pause_actions
+  if not pauseActions or type(pauseActions.unregisterModButton) ~= 'function' then return end
+  -- The UI module is not unloaded with the mod, so drop its pause-menu buttons
+  -- explicitly. Re-enabling the mod registers them again.
+  pcall(pauseActions.unregisterModButton, 'enhanceddriver.eic-settings')
+  pcall(pauseActions.unregisterModButton, 'arcadeOrbit.settings')
+end
+
 function M.onModDeactivated(mod)
   if not isOurMod(mod) then return end
   clearCameraModules()
+  unregisterUiButtons()
+end
+
+function M.onModActivated(mod)
+  if not isOurMod(mod) then return end
+  log('I', 'enhanceddriver', 'camera hook: mod activated')
+  clearCameraModules()
+  -- Enabling a mod at runtime does not load its UI module, so index.js never
+  -- runs. Register its pause-menu buttons here without reloading the UI.
+  registerUiButtons()
 end
 
 function M.clearCameraModules()
