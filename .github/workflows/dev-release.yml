@@ -6,12 +6,10 @@ name: Dev Release
 # the releases page stays clean and the download always reflects the latest
 # dev state.
 #
-# The release notes list the commits since the previously released dev
-# commit, with their (truncated) subjects. Because the rolling release is
-# deleted each push, a persistent lightweight tag (`dev-last`) marks the
-# last released commit; it is moved to the new head after each successful
-# run. On the first tracked release it falls back to everything on dev that
-# is not in master yet.
+# The release notes list, under a single "Change log" heading, every
+# commit on dev that has not been released yet (everything
+# not in master), with subjects truncated to 80 characters — followed by
+# the installation directions.
 
 on:
   push:
@@ -44,15 +42,9 @@ jobs:
           }
           Write-Host "Packaged: $zip ($((Get-Item $zip).Length) bytes)"
 
-      - name: Build changelog since the last release
+      - name: Build changelog of unreleased commits
         run: |
-          git fetch --force origin +refs/tags/dev-last:refs/tags/dev-last 2>/dev/null || true
-          if git rev-parse --verify --quiet refs/tags/dev-last >/dev/null; then
-            BASE="dev-last"
-          else
-            BASE="origin/master" # first tracked release: everything not yet released
-          fi
-          CHANGELOG=$(git log --reverse --pretty=format:'%h%x09%s' "$BASE..HEAD" \
+          CHANGELOG=$(git log --reverse --pretty=format:'%h%x09%s' "origin/master..HEAD" \
             | awk -F'\t' '{ if (length($2) > 80) $2 = substr($2, 1, 77) "..."; printf "- %s (%s)\n", $2, $1 }')
           if [ -z "$CHANGELOG" ]; then
             CHANGELOG="- (no new commits since the last release)"
@@ -60,7 +52,7 @@ jobs:
           {
             echo "Automated development build of the \`dev\` branch."
             echo ""
-            echo "## Changes since the last release"
+            echo "## Change log"
             echo "$CHANGELOG"
             echo ""
             echo "## Installation"
@@ -85,8 +77,3 @@ jobs:
             --title "Development Build ($SHORT_SHA)" \
             --notes-file release-notes.md \
             --prerelease
-
-      - name: Move the changelog anchor to this commit
-        run: |
-          git tag -f dev-last HEAD
-          git push -f origin refs/tags/dev-last
