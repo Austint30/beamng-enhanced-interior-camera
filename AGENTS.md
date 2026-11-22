@@ -181,6 +181,9 @@ issues). Read the camera's `AGENTS.md` before changing that camera.
   whole suite.
 - `./package.ps1 -Install` also drops the zip into the BeamNG mods folder.
 - Use PowerShell 7+; older versions produce zips BeamNG can't read.
+- CI: `.github/workflows/dev-release.yml` packages the mod with pwsh after every push to
+  the `dev` branch and publishes a rolling prerelease (tag `dev`, zip attached, recreated
+  each push).
 
 ## 8. Planned: enhanced hood camera
 

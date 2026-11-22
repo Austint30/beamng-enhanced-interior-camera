@@ -1,0 +1,55 @@
+name: Dev Release
+
+# Package the mod and publish a rolling development prerelease after every
+# push to the dev branch. The release uses a single rolling tag (`dev`):
+# each push deletes and recreates the prerelease at the new head commit, so
+# the releases page stays clean and the download always reflects the latest
+# dev state.
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package the mod (PowerShell 7)
+        shell: pwsh
+        run: ./package.ps1
+
+      - name: Verify package
+        shell: pwsh
+        run: |
+          $zip = 'dist/austint30.enhanced-interior-camera.zip'
+          if (-not (Test-Path $zip)) {
+            Write-Error "package.ps1 did not produce the expected zip: $zip"
+            exit 1
+          }
+          Write-Host "Packaged: $zip ($((Get-Item $zip).Length) bytes)"
+
+      - name: Delete previous dev release (rolling tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete dev --yes --cleanup-tag || true
+
+      - name: Create development release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          NOTES=$(printf 'Automated development build of the `dev` branch.\n\n- Commit: %s\n- Message: %s' \
+            "$GITHUB_SHA" "$COMMIT_MSG")
+          gh release create dev dist/austint30.enhanced-interior-camera.zip \
+            --target "$GITHUB_SHA" \
+            --title "Development Build ($SHORT_SHA)" \
+            --notes "$NOTES" \
+            --prerelease
