@@ -65,7 +65,7 @@ jobs:
             echo ""
             echo "## Installation"
             echo "1. Download **\`austint30.enhanced-interior-camera.zip\`** from the assets below."
-            echo "2. Copy the zip — do not extract it — into your BeamNG mods folder (\`Documents/BeamNG.drive/mods/\`); remove any older copy of the same zip first."
+            echo "2. Copy the zip — do not extract it — into your BeamNG mods folder, by default \`%LOCALAPPDATA%\\BeamNG\\BeamNG.drive\\current\\mods\\\` (yours may differ if you relocated the user folder); remove any older copy of the same zip first."
             echo "3. Enable the mod in the in-game Mod Manager if it is disabled, then restart the game (or press **Ctrl+L** to reload Lua)."
             echo "4. The enhanced interior camera replaces the stock occupant/driver cameras automatically. Enable the Arcade Chase Camera demo from the **EIC Settings** button in the pause-menu Mods tab."
           } > release-notes.md
