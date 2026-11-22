@@ -63,6 +63,13 @@
                 @update:model-value="v => updateDropdown(d, v)"
               />
             </div>
+            <SettingSwitch
+              v-for="s in group.switches"
+              :key="s.key"
+              v-bind="s"
+              :model-value="activeValues[s.key] === true"
+              @update:model-value="v => updateSwitch(s, v)"
+            />
             <SettingSlider
               v-for="f in group.sliders"
               :key="f.key"
@@ -108,6 +115,7 @@ import { lua } from "@/bridge"
 import { runRaw } from "@/bridge/libs/Lua.js"
 import { useSettings } from "@/services/settings"
 import SettingSlider from "./ArcadeChaseSettingSlider.vue"
+import SettingSwitch from "./SettingSwitch.vue"
 
 const DEFAULTS_PATH = "/lua/ge/extensions/core/arcadeOrbit/arcadeOrbitDefaults.json"
 const SETTINGS_PATH = "/arcadeOrbitSettings.json"
@@ -166,6 +174,10 @@ const speedDistanceFields = [
   { key: "speedDistance_smoothness", label: "Smoothness", description: "Time constant for the distance response (seconds). Higher = smoother / lazier.", min: 0.05, max: 10, step: 0.05, unit: "s" },
   { key: "speedDistance_brakeDecel", label: "Brake Max Deceleration", description: "Deceleration where the brake cancellation reaches full strength (g).", min: 0.1, max: 5, step: 0.1, unit: "g" },
   { key: "speedDistance_brakeStrength", label: "Brake Cancellation", description: "How much of the speed distance is cancelled at max deceleration. Scales down from 0 while braking.", min: 0, max: 100, step: 5, unit: "%" },
+]
+
+const speedDistanceSwitches = [
+  { key: "speedDistance_velocityMode", label: "Offset Along Velocity", description: "Displace the camera target (the orbit anchor) opposite the vehicle's direction of travel instead of extending the camera distance — the camera follows the anchor, so the rig pulls back along the travel line. During drifts the pull follows the actual travel line." },
 ]
 
 const accelDistFields = [
@@ -303,6 +315,7 @@ const SECTIONS = [
       {
         title: "Speed Distance",
         hint: "Smoothness is a time constant in seconds — higher = smoother / lazier response.",
+        switches: speedDistanceSwitches,
         sliders: speedDistanceFields,
       },
       { title: "Distance Boost", sliders: accelDistFields },
@@ -503,6 +516,17 @@ function updateDropdown(field, value) {
     presetName.value = ""
   }
   activeValues[field.key] = value
+  presets[CUSTOM_PRESET] = clone(activeValues)
+  queueSave()
+}
+
+function updateSwitch(field, value) {
+  if (chosenPreset.value !== CUSTOM_PRESET) {
+    presets[CUSTOM_PRESET] = clone(activeValues)
+    chosenPreset.value = CUSTOM_PRESET
+    presetName.value = ""
+  }
+  activeValues[field.key] = value === true
   presets[CUSTOM_PRESET] = clone(activeValues)
   queueSave()
 }

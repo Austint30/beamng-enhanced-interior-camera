@@ -26,6 +26,18 @@
 -- `brakeDecel` is the deceleration in g at which the cancellation is fully
 -- applied. 0 g decel → no cancellation; above brakeDecel → full cancellation
 -- (clamped).
+--
+-- Velocity mode (`speedDistance_velocityMode`, default off): the offset is
+-- applied to the camera TARGET (the orbit anchor) along the vehicle's live
+-- velocity direction instead of extending the boom distance —
+-- arcadeOrbit.lua displaces the anchor OPPOSITE the direction of travel by
+-- the offset before the camera position is built, so the camera follows the
+-- anchor through the standard positioning math (nothing moves the camera
+-- directly): the rig pulls back along the travel line — the car slides ahead
+-- in frame as speed builds — and during drifts the pull follows the actual
+-- travel line rather than the boom axis. The magnitude, smoothing, and
+-- brake cancellation are unchanged; the module still returns the same
+-- scalar offset and the caller decides where to apply it.
 
 local C = {}
 C.__index = C
@@ -54,6 +66,7 @@ function C:init()
   self.brakeDecel = 1.0
   self.brakeStrength = 1.0
   self.enabled = true
+  self.velocityMode = false
   self._offset = 0
   self._brakeDecel = 0
   self._prevDtSim = nil
@@ -77,6 +90,7 @@ function C:setSmoothness(v)
 end
 
 function C:setEnabled(v) self.enabled = v end
+function C:setVelocityMode(v) self.velocityMode = v == true end
 
 -- Returns a scalar delta (m) to add to the boom length this frame.
 -- Applied in arcadeOrbit.lua BEFORE the accel/decel distance modifier, which

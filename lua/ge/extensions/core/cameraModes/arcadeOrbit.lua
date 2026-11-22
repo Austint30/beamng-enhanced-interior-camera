@@ -53,6 +53,7 @@ local REAR_ASPECT_THRESHOLD = 2.0   -- rearDist/height ratio at which we cap the
 local STOP_FLIP_SPEED       = 0.3   -- m/s (~1 km/h): below this the parked-camera flip test only sees sim/suspension jitter — see the flip block below
 local NODE_UP_EPS_SQ        = 1e-6  -- squaredLength gate for the vehicle up vector (nz); ~0 only with a broken ref-node layout
 local MIN_AIM_DIST_M        = 0.5   -- m: floor on the camera-to-aim distance so a zeroed zoom can't amplify a g-force target offset into a 90° swing
+local VEL_DIR_EPS_SQ        = 1e-6  -- (m/s)²: below this the velocity direction is meaningless — the velocity-mode speed-distance aim-target shift must not normalize it
 
 function C:init()
   self.target = false
@@ -311,6 +312,7 @@ function C:applyConfig(c)
   if c.speedDistance_smoothness then self.speedDistance:setSmoothness(c.speedDistance_smoothness) end
   if c.speedDistance_brakeDecel then self.speedDistance:setBrakeDecel(c.speedDistance_brakeDecel) end
   if c.speedDistance_brakeStrength then self.speedDistance:setBrakeStrength(c.speedDistance_brakeStrength / 100) end
+  if c.speedDistance_velocityMode ~= nil then self.speedDistance:setVelocityMode(c.speedDistance_velocityMode) end
 
   -- Turntable control modes (§4.2)
   if c.turntableMode then self.turntable:setMode(c.turntableMode) end
@@ -411,6 +413,7 @@ local gAimAxis = vec3()
 local gAimQuat = quat()
 local leanRollQuat = quat()
 local leanRollUp = vec3(0, 0, 1)
+local velDirTmp = vec3()
 
 function C:update(data)
   data.res.collisionCompatible = true
@@ -736,9 +739,19 @@ function C:update(data)
     self.accelDistCtx.camForward:set(adFwdX/adFwdLen, adFwdY/adFwdLen, adFwdZ/adFwdLen)
   end
 
-  -- Speed distance (§5.10): speed-based boom length, applied BEFORE the
-  -- accel/decel distance modifier, which then stacks on top of this offset.
-  dist = dist + self.speedDistance:update(data)
+  -- Speed distance (§5.10): speed-based offset. In boom mode it extends the
+  -- boom length (applied BEFORE the accel/decel distance modifier, which
+  -- then stacks on top); in velocity mode the offset instead displaces the
+  -- camera TARGET (the orbit anchor) opposite the vehicle's velocity
+  -- direction before the position is built — the camera follows the anchor
+  -- through the standard positioning math (nothing moves the camera
+  -- directly), so the rig pulls back along the travel line and during
+  -- drifts the pull follows the actual travel line rather than the boom
+  -- axis.
+  local speedDistOffset = self.speedDistance:update(data)
+  if not self.speedDistance.velocityMode then
+    dist = dist + speedDistOffset
+  end
 
   -- Zoom multiplier (default 1.0, adjusted by mouse wheel)
   dist = dist + self.accelDistance:update(data, self.accelDistCtx)
@@ -759,6 +772,24 @@ function C:update(data)
   if data.lookBack and self.turntable.mode ~= 'Crank' then
     rotB = lookBackVec
     dirB = back - ref
+  end
+
+  -- Velocity mode (§5.10): apply the speed-distance offset to the camera
+  -- TARGET (the orbit anchor) instead of the boom distance. The anchor is
+  -- displaced opposite the vehicle's velocity direction and the camera
+  -- follows it through the standard positioning math below — nothing moves
+  -- the camera directly. The rig pulls back along the travel line (the car
+  -- slides ahead in frame as speed builds), and during drifts the pull
+  -- follows the actual travel line rather than the boom axis. Applied here
+  -- so the position bookkeeping and the aim pipeline below all use the
+  -- shifted anchor consistently; the flip/relaxation machinery above ran on
+  -- the raw vehicle anchor (the offset is time-constant smoothed, so the
+  -- per-frame anchor delta stays small).
+  if self.speedDistance.velocityMode and speedDistOffset > 0 and data.vel:squaredLength() > VEL_DIR_EPS_SQ then
+    velDirTmp:set(data.vel)
+    velDirTmp:normalize()
+    velDirTmp:setScaled(-speedDistOffset)
+    targetPos:set(push3(targetPos) + velDirTmp)
   end
 
   calculatedCamPos:set(

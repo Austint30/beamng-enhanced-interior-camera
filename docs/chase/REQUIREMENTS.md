@@ -353,10 +353,20 @@ reference `enhanceddriver` does).
   `strength` is stored 0–1 (settings/UI use 0–100 %); `maxDecel` is in g. Deceleration
   = loss of speed (|v| slope), smoothed with a 0.1 s time constant to filter sim
   jitter.
+- **Velocity mode** (`speedDistance_velocityMode`, switch, default **off**): apply
+  the offset to the camera TARGET (the orbit anchor) along the vehicle's live
+  velocity direction instead of extending the boom distance — the anchor is
+  displaced **opposite the direction of travel**, and the camera follows it
+  through the standard positioning math (nothing moves the camera directly):
+  the rig pulls back along the travel line, the car slides ahead in frame as
+  speed builds, and during drifts the pull follows the actual travel line
+  rather than the boom axis. Magnitude, smoothing, and brake cancellation
+  are unchanged; at near-zero speed no offset is applied.
 - Reset the smoother and offset on `data.teleported` / vehicle switch (no spikes).
 - Configurable: `speedDistance_maxDist` (m), `speedDistance_maxSpeed` (m/s internally,
   displayed in the user's unit), `speedDistance_smoothness` (s, time constant),
-  `speedDistance_brakeDecel` (g), `speedDistance_brakeStrength` (0–100 %).
+  `speedDistance_brakeDecel` (g), `speedDistance_brakeStrength` (0–100 %),
+  `speedDistance_velocityMode` (bool).
   Defaults: **0.2 m** max distance, **134.74 m/s (≈ 301 mph / 485 km/h)** max speed,
   0.5 s smoothing, 1.0 g brake max deceleration, 100 % brake cancellation.
 
@@ -524,6 +534,7 @@ reference `enhanceddriver` does).
 | `speedDistance_smoothness` | float | 0.05–10 | 0.5 | Speed-distance offset time constant (s); higher = smoother (§5.10) |
 | `speedDistance_brakeDecel` | float | 0.1–5 | 1.0 | Max deceleration before full brake cancellation (g) (§5.10) |
 | `speedDistance_brakeStrength` | float | 0–100 | 100 | Brake cancellation strength at max deceleration (0–100 %) (§5.10) |
+| `speedDistance_velocityMode` | bool | | false | Apply the offset to the camera target (orbit anchor displaced opposite travel; the camera follows) instead of extending the boom distance (§5.10) |
 | `brakePitch_minG` | float | 0–4.5 | 0.5 | Dead zone — no pitch below this deceleration (g) (§5.11) |
 | `brakePitch_maxG` | float | 0.1–5 | 2.0 | Braking g-force at which the full pitch is reached (g) (§5.11) |
 | `brakePitch_maxOffset` | float | 0–10 | 1 | Aim-target travel down at full deceleration (m, camera space; camera stays put) (§5.11) |
