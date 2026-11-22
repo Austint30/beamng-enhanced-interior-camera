@@ -5,6 +5,13 @@ name: Dev Release
 # each push deletes and recreates the prerelease at the new head commit, so
 # the releases page stays clean and the download always reflects the latest
 # dev state.
+#
+# The release notes list the commits since the previously released dev
+# commit, with their (truncated) subjects. Because the rolling release is
+# deleted each push, a persistent lightweight tag (`dev-last`) marks the
+# last released commit; it is moved to the new head after each successful
+# run. On the first tracked release it falls back to everything on dev that
+# is not in master yet.
 
 on:
   push:
@@ -18,8 +25,10 @@ jobs:
   package-and-release:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout (full history for the changelog range)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Package the mod (PowerShell 7)
         shell: pwsh
@@ -35,6 +44,27 @@ jobs:
           }
           Write-Host "Packaged: $zip ($((Get-Item $zip).Length) bytes)"
 
+      - name: Build changelog since the last release
+        run: |
+          git fetch --force origin +refs/tags/dev-last:refs/tags/dev-last || true
+          if git rev-parse --verify --quiet refs/tags/dev-last >/dev/null; then
+            BASE="dev-last"
+          else
+            BASE="origin/master" # first tracked release: everything not yet released
+          fi
+          CHANGELOG=$(git log --reverse --pretty=format:'%h%x09%s' "$BASE..HEAD" \
+            | awk -F'\t' 'length($2) > 80 { $2 = substr($2, 1, 77) "..." } { printf -- "- %s (%s)\n", $2, $1 }')
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="- (no new commits since the last release)"
+          fi
+          {
+            echo "Automated development build of the \`dev\` branch."
+            echo ""
+            echo "## Changes since the last release"
+            echo "$CHANGELOG"
+          } > release-notes.md
+          cat release-notes.md
+
       - name: Delete previous dev release (rolling tag)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -43,13 +73,15 @@ jobs:
       - name: Create development release
         env:
           GH_TOKEN: ${{ github.token }}
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
-          NOTES=$(printf 'Automated development build of the `dev` branch.\n\n- Commit: %s\n- Message: %s' \
-            "$GITHUB_SHA" "$COMMIT_MSG")
           gh release create dev dist/austint30.enhanced-interior-camera.zip \
             --target "$GITHUB_SHA" \
             --title "Development Build ($SHORT_SHA)" \
-            --notes "$NOTES" \
+            --notes-file release-notes.md \
             --prerelease
+
+      - name: Move the changelog anchor to this commit
+        run: |
+          git tag -f dev-last HEAD
+          git push -f origin refs/tags/dev-last
