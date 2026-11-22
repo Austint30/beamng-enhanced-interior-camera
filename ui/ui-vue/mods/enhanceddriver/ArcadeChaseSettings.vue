@@ -63,13 +63,6 @@
                 @update:model-value="v => updateDropdown(d, v)"
               />
             </div>
-            <SettingSwitch
-              v-for="s in group.switches"
-              :key="s.key"
-              v-bind="s"
-              :model-value="activeValues[s.key] === true"
-              @update:model-value="v => updateSwitch(s, v)"
-            />
             <SettingSlider
               v-for="f in group.sliders"
               :key="f.key"
@@ -80,6 +73,13 @@
               :model-value="displayValue(f)"
               :unit="f.speed ? speedUnit.label : (f.unit || '')"
               @update:model-value="v => updateSetting(f, v)"
+            />
+            <SettingSwitch
+              v-for="s in group.switches"
+              :key="s.key"
+              v-bind="s"
+              :model-value="activeValues[s.key] === true"
+              @update:model-value="v => updateSwitch(s, v)"
             />
           </template>
         </div>
@@ -177,7 +177,7 @@ const speedDistanceFields = [
 ]
 
 const speedDistanceSwitches = [
-  { key: "speedDistance_velocityMode", label: "Offset Along Velocity", description: "Displace the camera target (the orbit anchor) opposite the vehicle's direction of travel instead of extending the camera distance — the camera follows the anchor, so the rig pulls back along the travel line. During drifts the pull follows the actual travel line." },
+  { key: "speedDistance_velocityMode", label: "Offset Along Velocity", description: "Pull back along the direction of travel instead of extending the camera distance." },
 ]
 
 const accelDistFields = [
