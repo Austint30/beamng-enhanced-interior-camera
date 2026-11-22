@@ -50,6 +50,19 @@
           <template v-for="(group, groupIndex) in SECTIONS[activeSection].groups" :key="groupIndex">
             <h3 v-if="group.title">{{ group.title }}</h3>
             <p v-if="group.hint" class="settings-hint">{{ group.hint }}</p>
+            <div v-for="d in group.dropdowns" :key="d.key" class="setting-dropdown">
+              <div class="setting-copy">
+                <div class="setting-label">{{ d.label }}</div>
+                <div class="setting-description">{{ d.description }}</div>
+              </div>
+              <BngDropdown
+                class="setting-control"
+                :model-value="activeValues[d.key]"
+                :items="d.items"
+                long-names="wrap"
+                @update:model-value="v => updateDropdown(d, v)"
+              />
+            </div>
             <SettingSlider
               v-for="f in group.sliders"
               :key="f.key"
@@ -213,11 +226,60 @@ const followFields = [
   { key: "followSmoothing_pitchSmooth", label: "Pitch Smoothness", description: "How lazily the camera boom's pitch follows the car (bumps, crests). Higher = smoother / slower response.", min: 0.1, max: 10, step: 0.1, unit: "s" },
 ]
 
+const turntableModeItems = [
+  { label: "Static — stays where you leave it", value: "Static" },
+  { label: "Static+ — auto-centers after idle delay", value: "Static+" },
+  { label: "Dynamic — stick position maps to the camera pose", value: "Dynamic" },
+  { label: "Crank — camera points where the stick points", value: "Crank" },
+]
+
+const turntableModeDropdowns = [
+  {
+    key: "turntableMode",
+    label: "Control Mode",
+    description: "How the camera-rotation input (gamepad right stick / mouse right-click drag) moves the camera.",
+    items: turntableModeItems,
+  },
+]
+
+const staticPlusFields = [
+  { key: "staticPlusResetDelay", label: "Idle Reset Delay", description: "Seconds without rotation input before the camera eases back to the forward position.", min: 0.5, max: 30, step: 0.5, unit: "s" },
+]
+
+const dynamicFields = [
+  { key: "dynamicMaxYaw", label: "Max Yaw", description: "Yaw at full stick deflection. 180° lets the camera swing all the way to face backwards.", min: 0, max: 180, step: 5, unit: "°" },
+  { key: "dynamicMaxPitch", label: "Max Pitch", description: "Share of the pitch range used at full stick deflection. Stick up = look down from above; stick down = look up from near ground level.", min: 0, max: 100, step: 5, unit: "%" },
+]
+
+const crankFields = [
+  { key: "crankMaxYaw", label: "Max Yaw", description: "Yaw at a full right/left stick deflection (90° = the stock dial feel). The dial is direction-driven and engages past a fixed internal deadzone.", min: 0, max: 180, step: 5, unit: "°" },
+]
+
+const mouseFields = [
+  { key: "mouseDragSensitivity", label: "Mouse Drag Sensitivity", description: "Dynamic/Crank: how fast a right-click drag moves the virtual stick.", min: 0.1, max: 10, step: 0.1 },
+]
+
 const SECTIONS = [
   {
     id: "camera",
     label: "Camera",
     groups: [{ sliders: cameraFields }],
+  },
+  {
+    id: "turntable",
+    label: "Turntable",
+    groups: [
+      {
+        title: "Control Mode",
+        hint: "How the rotation input (gamepad right stick / mouse right-click drag) is interpreted. In Dynamic/Crank, the stick click (the game's Look Back binding) glances backwards instantly.",
+        dropdowns: turntableModeDropdowns,
+        sliders: [],
+      },
+      { title: "Static+", sliders: staticPlusFields },
+      { title: "Dynamic", sliders: dynamicFields },
+      { title: "Crank", sliders: crankFields },
+      { title: "Mouse Drag", sliders: mouseFields },
+    ],
   },
   {
     id: "velocityAim",
@@ -430,6 +492,17 @@ function updateSetting(field, value) {
     presetName.value = ""
   }
   activeValues[field.key] = toStoredValue(field, value)
+  presets[CUSTOM_PRESET] = clone(activeValues)
+  queueSave()
+}
+
+function updateDropdown(field, value) {
+  if (chosenPreset.value !== CUSTOM_PRESET) {
+    presets[CUSTOM_PRESET] = clone(activeValues)
+    chosenPreset.value = CUSTOM_PRESET
+    presetName.value = ""
+  }
+  activeValues[field.key] = value
   presets[CUSTOM_PRESET] = clone(activeValues)
   queueSave()
 }
@@ -706,6 +779,40 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 0.82rem;
   color: rgba(var(--bng-off-white-rgb), 0.65);
+}
+
+.setting-dropdown {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 1fr) minmax(11.5rem, 1.25fr);
+  align-items: center;
+  gap: 0.2rem 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--bng-corners-1);
+  background: rgba(var(--bng-cool-gray-700-rgb), 0.26);
+
+  .setting-copy { min-width: 0; }
+
+  .setting-label {
+    color: var(--bng-off-white);
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  .setting-description {
+    margin-top: 0.1rem;
+    color: rgba(var(--bng-off-white-rgb), 0.68);
+    font-size: 0.78rem;
+    line-height: 1.25;
+  }
+
+  .setting-control {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .bng-dropdown { margin: 0; }
 }
 
 .create-preset {

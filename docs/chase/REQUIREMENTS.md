@@ -22,7 +22,7 @@ Crank). All parameters are user-configurable through a Vue settings UI with pres
 - Two shipping presets: **Default** (all effects on, including shake) and **Smooth**
   (shake disabled, gentler motion).
 - Clean, modular code: each camera effect lives in its own file under
-  `core/arcadeOrbit/effects/` and is composed by the main `arcadeOrbit.lua`.
+  `core/arcadeOrbit/features/` and is composed by the main `arcadeOrbit.lua`.
 
 ## 2. Non-goals / Out of scope (for now)
 
@@ -120,14 +120,31 @@ Modes:
    - stick right → **+90°**; left → **-90°**; up-right 45° → **45°**; stick back (down) →
      **backwards (180°)**.
    - i.e. yaw ≈ `atan2(x, y)` (up = forward, right = +90°, down = 180°, left = -90°).
-   - Partial analog states are **linearly interpolated** between forward and the full
-     stick direction.
-   - **Adjustable deadzone** (radius) — no rotation until the stick moves past it.
+   - **Vertical input is dead from +1 to -0.75** (stick inside the fixed
+     horizontal deadzone): the camera does not move at all — partial
+     vertical pulls never produce partial dial angles. Past **-0.75** the
+     target changes to the direction of the joystick regardless of
+     magnitude (full deflection — a back pull lands at the full back pose;
+     the jump from the held target snaps instantly via the target-flip
+     rule, as a side effect). Horizontal/diagonal input is analog: the
+     direction is always the true stick direction, so slow sweeps through
+     any quadrant are monotonic (no reversal, no hitch at back); partial
+     input interpolates between straight and the intended direction.
+   - **Deadzone** — a fixed 5 % constant (deliberately not user-facing) — no
+     rotation until the stick moves past it.
+   - **Target-flip snap** — if the commanded target flips ~180° (±5°) from
+     the camera's current direction in one frame (flicking the stick from
+     forward to back, or releasing the stick from the back position), it is
+     taken instantly (the input smoothing is skipped). The snap is purely
+     target-based — it does not depend on where the stick is aimed.
+   - The **Look Back** action (right-stick click) emulates holding the stick
+     at straight-back (the same full back pose through the same math), and
+     snaps when that is a ~180° flip from the current direction.
    - Compatible with right-click + mouse drag.
 
 ## 5. Camera effects
 
-Each effect is a separate module in `core/arcadeOrbit/effects/` exposing at minimum
+Each effect is a separate module in `core/arcadeOrbit/features/` exposing at minimum
 `init()`, `update(data, ctx)`, `reset()`, and any setters. The main camera composes
 them in a defined order and multiplies each effect's contribution by a global
 "camera effect factor" (so they can be globally suppressed on teleport/reset, as the
@@ -461,7 +478,6 @@ reference `enhanceddriver` does).
 | `dynamicMaxYaw` | float | 0–180 | 180 | Dynamic max yaw (°) |
 | `dynamicMaxPitch` | float | 0–100 | 70 | Dynamic max pitch (%), stick up = look down |
 | `crankMaxYaw` | float | 0–180 | 90 | Crank max yaw (°) |
-| `crankDeadzone` | float | 0–0.5 | 0.15 | Crank stick deadzone radius |
 | `mouseDragSensitivity` | float | 0–10 | 1 | Mouse-drag → stick scale |
 | `followVelocityWeight` | float | 0–1 | 0.8 | Velocity vs forward aim blend |
 | `speedShakeAmp` | float | 0–10 | 5.5 | Speed shake amplitude |
@@ -544,8 +560,8 @@ enhanced-camera-suite/
 ├── lua/ge/extensions/core/arcadeOrbit/ # helper modules (SIBLING dir, NOT under cameraModes/)
 │   ├── perlin.lua                      # perlin noise (already present; relocated here)
 │   ├── tumbleDetection.lua             # §5.7 tumble detector (carried over)
-│   ├── turntable.lua                   # §4.2 camera control modes + input normalization
-│   └── effects/
+│   └── features/
+│       ├── turntable.lua               # §4.2 camera control modes + input normalization
 │       ├── velocityFollow.lua          # §4 velocity/forward aim blend
 │       ├── speedShake.lua              # §5.1 perlin speed shake
 │       ├── driftShake.lua              # §5.2 drift shake (burnout signal deferred)
@@ -649,7 +665,7 @@ shift. The first phase is the "walking skeleton": a registered, drivable camera.
 
 ### Phase 3 — Shake (speed + drift/burnout)
 - **Goal:** perlin shake at speed and during drift/burnout.
-- **Scope:** `effects/speedShake.lua` (§5.1), `effects/driftShake.lua` (§5.2); perlin
+- **Scope:** `features/speedShake.lua` (§5.1), `features/driftShake.lua` (§5.2); perlin
   LUT sampling; drift angle + rear-slip burnout; UI sliders; Smooth preset disables
   shake.
 - **Definition of done:** shake ramps with speed; drift/burnout shake; off in Smooth;
@@ -658,10 +674,10 @@ shift. The first phase is the "walking skeleton": a registered, drivable camera.
 
 ### Phase 4 — G-force family (acceleration, collision jerk, lean-in)
 - **Goal:** crest/valley response, sudden-impact jerk, sustained cornering lean-in.
-- **Scope:** `effects/accelResponse.lua` (§5.3, crest/valley — implemented),
-  `effects/brakePitch.lua` (§5.11, braking pitch-down), `effects/decelJolt.lua` +
-  `effects/accelJolt.lua` (§5.12, impact jolts), `effects/collisionJerk.lua`
-  (§5.4), `effects/leanInRoll.lua` (§5.5); computed acceleration; thresholds +
+- **Scope:** `features/accelResponse.lua` (§5.3, crest/valley — implemented),
+  `features/brakePitch.lua` (§5.11, braking pitch-down), `features/decelJolt.lua` +
+  `features/accelJolt.lua` (§5.12, impact jolts), `features/collisionJerk.lua`
+  (§5.4), `features/leanInRoll.lua` (§5.5); computed acceleration; thresholds +
   `newTemporalSmoothingNonLinear`; UI sliders.
 - **Definition of done:** valley/crest height+pitch; jerk on hard accel/brake/side
   impact; lean-in in corners; all reset cleanly.
@@ -669,13 +685,38 @@ shift. The first phase is the "walking skeleton": a registered, drivable camera.
 
 ### Phase 5 — Dynamic FOV + Tumble mode
 - **Goal:** speed-based FOV and a stable tumble pose.
-- **Scope:** `effects/dynamicFov.lua` (§5.6), `tumbleDetection.lua` (carried over) +
-  `effects/tumbleMode.lua` (§5.7); FOV disabled while tumbling; UI sliders.
+- **Scope:** `features/dynamicFov.lua` (§5.6), `tumbleDetection.lua` (carried over) +
+  `features/tumbleMode.lua` (§5.7); FOV disabled while tumbling; UI sliders.
 - **Definition of done:** FOV grows with speed; tumble pose (down/back/left) holds on
   the pre-tumble trajectory with smooth in/out; FOV off during tumble.
 - **Depends on:** Phase 2
 
 ### Phase 6 — Turntable control modes
+
+> **Status: implemented.** Delivered as `core/arcadeOrbit/features/turntable.lua` (input
+> normalization + the four modes), dispatched from the manual-rotation block in
+> `arcadeOrbit.lua`, with the ACC Settings panel's **Turntable** section for the
+> UI. See `docs/chase/AGENTS.md` for the gotchas.
+>
+> **Refinements:** (1) Crank's vertical input (stick inside the fixed
+> horizontal deadzone) is dead from +1 to -0.75 — the camera holds its
+> target and does not move at all; past -0.75 the target jumps to the
+> stick's direction at full deflection regardless of magnitude (a back pull
+> lands at the full back pose, snapping instantly as a side effect of the
+> target-flip rule). Horizontal/diagonal input is analog: the direction is
+> always the true stick direction and the magnitude interpolates past a
+> fixed 5 % deadzone constant (the `crankDeadzone` user setting was
+> removed), so slow sweeps through any quadrant are monotonic.
+> (2) A commanded-target
+> flip of ~180° (±5°) from the camera's current direction is taken
+> instantly (the input smoothing is skipped) — a stick flick from forward
+> to back, releasing the stick from the back position, or the Look Back
+> click; the snap is purely target-based, never the stick direction.
+> (3) The game's **Look Back** action (right-stick click on gamepad
+> layouts) emulates holding the stick at straight-back in Crank — the same
+> full back pose through the same crank math (the stock look-back override
+> is suppressed there); the other modes keep the stock look-back glance.
+
 - **Goal:** Static / Static+ / Dynamic / Crank camera control.
 - **Scope:** `turntable.lua` (input normalization + the four modes, §4.2);
   mouse-drag-as-stick; UI (`turntableMode` + related params).
@@ -691,4 +732,5 @@ shift. The first phase is the "walking skeleton": a registered, drivable camera.
   features work together; no Lua errors in the log.
 - **Depends on:** Phases 1–6
 
-> **Next up: Phase 1.**
+> **Status:** Phases 1–4 and 6 are delivered. Remaining: collision jerk (§5.4),
+> dynamic FOV (§5.6), tumble mode (§5.7), and the Phase 7 polish pass.

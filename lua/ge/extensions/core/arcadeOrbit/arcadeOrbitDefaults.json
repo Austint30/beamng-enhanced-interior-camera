@@ -73,7 +73,13 @@
       "speedDistance_maxSpeed": 91.464232388888,
       "speedDistance_smoothness": 0.5,
       "speedDistance_brakeDecel": 1,
-      "speedDistance_brakeStrength": 100
+      "speedDistance_brakeStrength": 100,
+      "turntableMode": "Static",
+      "staticPlusResetDelay": 4,
+      "dynamicMaxYaw": 180,
+      "dynamicMaxPitch": 70,
+      "crankMaxYaw": 90,
+      "mouseDragSensitivity": 1
     },
     "Smooth": {
       "screenFill": 53,
@@ -147,7 +153,13 @@
       "speedDistance_maxSpeed": 91.464232388888,
       "speedDistance_smoothness": 0.5,
       "speedDistance_brakeDecel": 1,
-      "speedDistance_brakeStrength": 100
+      "speedDistance_brakeStrength": 100,
+      "turntableMode": "Static",
+      "staticPlusResetDelay": 4,
+      "dynamicMaxYaw": 180,
+      "dynamicMaxPitch": 70,
+      "crankMaxYaw": 90,
+      "mouseDragSensitivity": 1
     },
     "Intense": {
       "screenFill": 53,
@@ -221,7 +233,13 @@
       "speedDistance_maxSpeed": 91.464232388888,
       "speedDistance_smoothness": 0.5,
       "speedDistance_brakeDecel": 1,
-      "speedDistance_brakeStrength": 100
+      "speedDistance_brakeStrength": 100,
+      "turntableMode": "Static",
+      "staticPlusResetDelay": 4,
+      "dynamicMaxYaw": 180,
+      "dynamicMaxPitch": 70,
+      "crankMaxYaw": 90,
+      "mouseDragSensitivity": 1
     }
   }
 }

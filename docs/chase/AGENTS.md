@@ -29,7 +29,8 @@ enhanced-camera-suite/
 │   ├── perlin.lua                      # perlin noise (noise / OctavePerlin)
 │   ├── refNodes.lua                    # one-shot ref-node sync/registration
 │   ├── vehicleMeasure.lua              # roof height / vehicle height / rear distance
-│   └── effects/                        # one file per effect, composed by arcadeOrbit.lua
+│   └── features/                       # one file per camera feature, composed by arcadeOrbit.lua
+│       ├── turntable.lua               # §4.2 control modes (Static / Static+ / Dynamic / Crank) + input normalization
 │       ├── velocityAim.lua             # drift look (aim offset toward velocity)
 │       ├── speedShake.lua              # speed-based perlin shake
 │       ├── driftShake.lua              # drift/burnout shake (slip-angle driven)
@@ -67,7 +68,7 @@ enhanced-camera-suite/
   (`core/enhancedoccupant/cameraFeatures.lua`) is a working reference for the
   force→angle math.
 - **`ny` (back node − ref) points toward the REAR of the vehicle.** Evidence:
-  `core/arcadeOrbit/effects/velocityAim.lua` — the aim only applies while
+  `core/arcadeOrbit/features/velocityAim.lua` — the aim only applies while
   `velLocal.y < 0` (velocity projected on the back node = "moving forward").
   Direction of travel is **`−ny`**. Sign-sensitive effects (e.g. `brakePitch`'s
   longitudinal decel) must project against `−ny`; fold/symmetric effects (drift slip
@@ -81,6 +82,33 @@ enhanced-camera-suite/
 - **Reset wiring.** On `data.teleported` and on vehicle switch (`onVehicleSwitched`),
   the camera resets all effect state and smoothers — see the `data.teleported` block in
   `arcadeOrbit.lua`; each effect module also exposes `reset()` for this.
+
+- **Turntable direct modes and the anchor/parity flip.** In Dynamic/Crank the stick drives
+  `camRot` every frame, so `lockCamera` is forced false at the top of `update()` and the stock
+  flip test never fires — the boom's relaxation machinery handles reversing smoothly instead.
+  If you touch the flip logic, keep the `turntable:isDirectMode()` guard intact, or a flip will
+  write +180 into a camRot that the stick overwrites one frame later (a visible world jump).
+- **Stick-click look back.** The game's **Look Back** action (`look_back` → `data.lookBack`,
+  the right-stick click on gamepad layouts) EMULATES holding the stick at straight-back in
+  Crank: the turntable commands the identical full back pose through the same crank math,
+  and the stock `rotB`/`dirB` look-back override is suppressed in Crank so the click stays
+  on that one path. The target-flip rule decides whether it snaps (it does whenever the
+  click is a ~180° flip from the camera's current direction). The other modes keep the
+  stock look-back pose (instant, via `rotB`/`dirB`).
+- **Crank target-flip snap.** In Dynamic/Crank the stick pose runs through the stock
+  ~1/8 s input smoothing — EXCEPT in Crank when the commanded target flips ~180° (±5°)
+  from the camera's current direction in one frame: a stick flick from forward to back,
+  RELEASING the stick from the back position (±180 → 0), or the Look Back click from
+  forward. There the commanded pose is **adopted** in the input smoother (`camLastRot`),
+  so the camera takes it the same frame. The snap is purely target-based — never the
+  stick direction. Vertical input (stick inside the horizontal deadzone, the fixed 5 %
+  `CRANK_STICK_DEADZONE`) is DEAD from +1 down to -0.75 — the camera holds its target,
+  no movement at all; past -0.75 (the `CRANK_FB_TRIGGER` constant) the target jumps to
+  the stick's direction at full deflection regardless of magnitude, and the jump from
+  the held target snaps instantly via the flip rule (a side effect). Horizontal/diagonal
+  input is analog: the direction is always the true stick direction (slow sweeps through
+  any quadrant are monotonic — no reversal, no hitch at back) and the magnitude
+  interpolates. Both constants are deliberately not user-facing.
 
 ## 4. Chase-specific API notes
 
@@ -99,7 +127,7 @@ enhanced-camera-suite/
 
 ## 5. Lua conventions (chase)
 
-- **Effect modules** live in `core/arcadeOrbit/effects/`, each returning a constructor
+- **Effect modules** live in `core/arcadeOrbit/features/`, each returning a constructor
   (root class pattern) exposing `init()`, `update(data, ctx)`, `reset()`, and setters
   (e.g. `setAmpMultiplier`, `setMinSpeed`). The main camera instantiates them in `init()`,
   pushes settings in `applyConfig()`, calls `update` in a fixed order, and calls `reset()`
@@ -152,7 +180,7 @@ suppression/reset, and settings load/merge:
 
 ## 9. Definition of done (per chase feature)
 
-- Effect implemented in its own `core/arcadeOrbit/effects/<name>.lua` file and composed by
+- Effect implemented in its own `core/arcadeOrbit/features/<name>.lua` file and composed by
   `arcadeOrbit.lua`.
 - All of its parameters exposed in the chase settings panel and stored in the settings JSON.
 - Respects the active preset (e.g. shake off in **Smooth**).
@@ -162,6 +190,17 @@ suppression/reset, and settings load/merge:
 - New/renamed modules added to both module-cache lists (root `AGENTS.md` §1).
 - The demo gate (§3) still works: camera + ACC button hidden until the interior panel's
   switch is turned on.
+
+- Exercise every turntable control mode (ACC Settings → Turntable) with both the gamepad
+  right stick and the mouse right-click drag: Static stays put, Static+ re-centers after the
+  idle delay, Dynamic maps the stick to the pose, Crank points where the stick points
+  (deadzone respected). In Crank: vertical pulls inside the horizontal deadzone (from +1
+  down to -0.75) must not move the camera at all; crossing -0.75 must jump to the full
+  back pose (instant from the held forward target — the flip snap as a side effect); slow
+  sweeps through every quadrant (including through straight-back) must be monotonic — never
+  reversing toward forward, never hitching; partial horizontal/diagonal input must
+  interpolate. Releasing from back and the Look Back click must be instant. In the other
+  modes the click keeps the stock look-back glance.
 
 ## 10. Known issues
 

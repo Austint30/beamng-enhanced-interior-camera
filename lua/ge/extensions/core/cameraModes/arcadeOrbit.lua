@@ -5,17 +5,18 @@
 -- ORBIT CAMERA
 local collision = require('core/cameraModes/collision')
 local refNodesSync = require('core/arcadeOrbit/refNodes')
-local velocityAim = require('core/arcadeOrbit/effects/velocityAim')
-local speedShake = require('core/arcadeOrbit/effects/speedShake')
-local driftShake = require('core/arcadeOrbit/effects/driftShake')
-local accelDistance = require('core/arcadeOrbit/effects/accelDistance')
-local accelResponse = require('core/arcadeOrbit/effects/accelResponse')
-local brakePitch = require('core/arcadeOrbit/effects/brakePitch')
-local decelJolt = require('core/arcadeOrbit/effects/decelJolt')
-local accelJolt = require('core/arcadeOrbit/effects/accelJolt')
-local leanInRoll = require('core/arcadeOrbit/effects/leanInRoll')
-local followSmoothing = require('core/arcadeOrbit/effects/followSmoothing')
-local speedDistance = require('core/arcadeOrbit/effects/speedDistance')
+local velocityAim = require('core/arcadeOrbit/features/velocityAim')
+local speedShake = require('core/arcadeOrbit/features/speedShake')
+local driftShake = require('core/arcadeOrbit/features/driftShake')
+local accelDistance = require('core/arcadeOrbit/features/accelDistance')
+local accelResponse = require('core/arcadeOrbit/features/accelResponse')
+local brakePitch = require('core/arcadeOrbit/features/brakePitch')
+local decelJolt = require('core/arcadeOrbit/features/decelJolt')
+local accelJolt = require('core/arcadeOrbit/features/accelJolt')
+local leanInRoll = require('core/arcadeOrbit/features/leanInRoll')
+local followSmoothing = require('core/arcadeOrbit/features/followSmoothing')
+local speedDistance = require('core/arcadeOrbit/features/speedDistance')
+local turntable = require('core/arcadeOrbit/features/turntable')
 local vehicleMeasure = require('core/arcadeOrbit/vehicleMeasure')
 
 -- ---------------------------------------------------------------------------
@@ -97,6 +98,7 @@ function C:init()
   self.followSmoothing = followSmoothing()
   self.speedDistance = speedDistance()
   self.vehicleMeasure = vehicleMeasure()
+  self.turntable = turntable()
   self.aimCtx = { targetPos = vec3(), left = vec3(), back = vec3() }
   self.driftCtx = { carRot = quat(), carRotInv = quat(), flatVelocity = vec3() }
 
@@ -148,6 +150,7 @@ function C:onVehicleSwitched()
   self.followSmoothing:reset()
   self.speedDistance:reset()
   self.vehicleMeasure:reset()
+  self.turntable:reset()
   self.refNodesSync:reset()
   self._fitDistDirty = true
   self._dbgLogged = false
@@ -308,6 +311,14 @@ function C:applyConfig(c)
   if c.speedDistance_smoothness then self.speedDistance:setSmoothness(c.speedDistance_smoothness) end
   if c.speedDistance_brakeDecel then self.speedDistance:setBrakeDecel(c.speedDistance_brakeDecel) end
   if c.speedDistance_brakeStrength then self.speedDistance:setBrakeStrength(c.speedDistance_brakeStrength / 100) end
+
+  -- Turntable control modes (§4.2)
+  if c.turntableMode then self.turntable:setMode(c.turntableMode) end
+  if c.staticPlusResetDelay then self.turntable:setStaticPlusResetDelay(c.staticPlusResetDelay) end
+  if c.dynamicMaxYaw then self.turntable:setDynamicMaxYaw(c.dynamicMaxYaw) end
+  if c.dynamicMaxPitch then self.turntable:setDynamicMaxPitch(c.dynamicMaxPitch) end
+  if c.crankMaxYaw then self.turntable:setCrankMaxYaw(c.crankMaxYaw) end
+  if c.mouseDragSensitivity then self.turntable:setMouseDragSensitivity(c.mouseDragSensitivity) end
 end
 
 -- Load settings from the user file + defaults, then apply.
@@ -445,6 +456,7 @@ function C:update(data)
     self.leanInRoll:reset()
     self.followSmoothing:reset()
     self.speedDistance:reset()
+    self.turntable:reset()
   end
 
   -- calculate the camera offset: rotate with the vehicle
@@ -493,6 +505,14 @@ function C:update(data)
   local pitchDif = 0.1*(MoveManager.pitchDown - MoveManager.pitchUp)
   dir:set(vecY)
 
+  -- Turntable direct modes (Dynamic/Crank) hold the camera pose with the
+  -- stick, so the locked-camera anchor/parity flip must never fire in them
+  -- (camRot is overwritten from the stick every frame).
+  if self.turntable:isDirectMode() then
+    self.lockCamera = false
+    self.accumManualYaw = 0
+  end
+
   local flipFired = false
   if self.cameraResetted == 0 then
     -- Stopped flip guard: this test compares per-frame displacement; when the
@@ -527,24 +547,66 @@ function C:update(data)
     end
   end
 
+  -- Turntable control modes (§4.2): how the rotation input (gamepad right
+  -- stick / mouse RMB drag) moves the camera. Static/Static+ keep the stock
+  -- orbit manual-rotation accumulation (Static+ adds an idle auto-reset);
+  -- Dynamic/Crank replace it with a stick-driven absolute pose.
   local maxRot = 4.5
-  if (math.abs(yawDif) + math.abs(pitchDif) + math.abs(MoveManager.yawRelative) + math.abs(MoveManager.pitchRelative) > 0) then
-    maxRot = 1000
-  end
-
-  -- mouse rotation
-  local dtfactor = data.dt * 1000
-  local mouseYaw = sign(MoveManager.yawRelative) * math.min(math.abs(MoveManager.yawRelative * 10), maxRot * data.dt) + yawDif * dtfactor
-  local mousePitch = sign(-MoveManager.pitchRelative) * math.min(math.abs(MoveManager.pitchRelative * 10), maxRot * data.dt) + pitchDif * dtfactor
-  if mouseYaw ~= 0 or mousePitch ~= 0 then
-    -- only lock the camera once enough horizontal movement has accumulated
-    self.accumManualYaw = (self.accumManualYaw or 0) + mouseYaw
-    if self.cameraResetted == 0 and math.abs(self.accumManualYaw) > 10 then
-      self.lockCamera = true
+  if self.turntable:isDirectMode() then
+    -- Dynamic/Crank: the stick position maps to the camera pose; the stock
+    -- manual-rotation accumulation is bypassed (camRot is overwritten from
+    -- the stick each frame; the boom keeps following the direction of travel
+    -- via the relaxation machinery, which handles reversing smoothly on its
+    -- own). In Crank the Look Back action (stick click) arrives through the
+    -- turntable as the same stick-back command, so there is no special
+    -- handling here.
+    local ttYaw, ttPitch, ttActive, ttSnap = self.turntable:update(data)
+    self.camRot.x = ttYaw
+    if ttPitch then
+      self.camRot.y = ttPitch
+    else
+      self.camRot.y = 0 -- Crank: no pitch in this mode
     end
-    self.camRot.x = self.camRot.x - mouseYaw
-    self.camRot.y = self.camRot.y - mousePitch
-    --self.camRot.z = self.camRot.z + 300*data.dt*(MoveManager.rollRight - MoveManager.rollLeft)
+    if ttSnap then
+      -- Target-flip instant take (crank): the commanded target flipped
+      -- ~180° (±5°) from the camera's current direction — a stick flick
+      -- forward→back, a release from back, or the Look Back click — skips
+      -- the input smoothing: the smoothing block below eases the RENDERED
+      -- rotation toward camRot through camLastRot, so adopt the commanded
+      -- pose there and the camera takes it THIS frame. Every other stick
+      -- move (including smooth spins through straight-back) keeps the
+      -- stock ~1/8 s eased feel.
+      self.camLastRot.x = math.rad(ttYaw)
+      if ttPitch then
+        self.camLastRot.y = math.rad(ttPitch)
+      else
+        self.camLastRot.y = 0
+      end
+    end
+    if ttActive then maxRot = 1000 end
+  else
+    local hasInput = math.abs(yawDif) + math.abs(pitchDif) + math.abs(MoveManager.yawRelative) + math.abs(MoveManager.pitchRelative) > 0
+    if hasInput then maxRot = 1000 end
+
+    -- mouse rotation
+    local dtfactor = data.dt * 1000
+    local mouseYaw = sign(MoveManager.yawRelative) * math.min(math.abs(MoveManager.yawRelative * 10), maxRot * data.dt) + yawDif * dtfactor
+    local mousePitch = sign(-MoveManager.pitchRelative) * math.min(math.abs(MoveManager.pitchRelative * 10), maxRot * data.dt) + pitchDif * dtfactor
+    if mouseYaw ~= 0 or mousePitch ~= 0 then
+      -- only lock the camera once enough horizontal movement has accumulated
+      self.accumManualYaw = (self.accumManualYaw or 0) + mouseYaw
+      if self.cameraResetted == 0 and math.abs(self.accumManualYaw) > 10 then
+        self.lockCamera = true
+      end
+      self.camRot.x = self.camRot.x - mouseYaw
+      self.camRot.y = self.camRot.y - mousePitch
+      --self.camRot.z = self.camRot.z + 300*data.dt*(MoveManager.rollRight - MoveManager.rollLeft)
+    end
+
+    -- Static+ idle reset: after the delay, ease back to the default pose.
+    if self.turntable.mode == 'Static+' and self.turntable:updateStaticPlus(data, self, hasInput) then
+      maxRot = 1000
+    end
   end
 
   self.camRot.y = math.min(math.max(self.camRot.y, -85), 85)
@@ -691,7 +753,10 @@ function C:update(data)
   local rotB = rot
   local dirB = dir
 
-  if data.lookBack then
+  -- In Crank the Look Back action is routed through the crank math itself
+  -- (the turntable commands the stick-back pose, taken instantly), so the
+  -- stock look-back pose override applies only in the other modes.
+  if data.lookBack and self.turntable.mode ~= 'Crank' then
     rotB = lookBackVec
     dirB = back - ref
   end
